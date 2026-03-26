@@ -16,13 +16,13 @@ from scipy.signal import hilbert
 # ========================
 # SETTINGS
 # ========================
-RAW_DIR    = r"C:\Users\farah\OneDrive\Desktop\dataset\raw"
-POSITIONS  = [0, 45, 90, 135, 225, 270, 315]
+RAW_DIR    = r"C:\Users\ahmma\Desktop\farah\datasetE1"
+POSITIONS  = [0, 45, 90, 180, 135, 225, 270, 315]
 MIC_NAMES  = ["mic_right", "mic_front", "mic_left", "mic_back"]
 MIC_LABELS = ["Mic0 (Right)", "Mic1 (Front)", "Mic2 (Left)", "Mic3 (Back)"]
 MIC_COLORS = ["#378ADD", "#1D9E75", "#9F77DD", "#E24B4A"]
 RATE       = 16000
-ANALYSIS_SEC = 360
+ANALYSIS_SEC = 100
 
 # ========================
 # PROGRESS BAR
