@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Feature Extraction — Sound Localization
-Processes datasetE1 + datasetE2.
+Processes (24 angles)dataset.
 5min recordings -> train.csv
 3min recordings -> test.csv
-Features per 2s chunk: RMS (4 mics), IPD (3 pairs), GCC-PHAT TDOA + strength (6 pairs)
+Features per 30ms chunk: RMS (4 mics), IPD (3 pairs), GCC-PHAT TDOA + strength (6 pairs)
 """
 
 import numpy as np
@@ -41,8 +41,8 @@ def rms(audio):
     return float(np.sqrt(np.mean(audio ** 2)))
 
 def get_ipd(sig1, sig2):
-    a1 = np.angle(hilbert(sig1))
-    a2 = np.angle(hilbert(sig2))
+    a1 = np.angle(hilbert(sig1))  # type: ignore[arg-type]
+    a2 = np.angle(hilbert(sig2))  # type: ignore[arg-type]
     return float(np.mean(np.degrees(np.arctan2(np.sin(a1 - a2), np.cos(a1 - a2)))))
 
 def get_gcc_phat(sig1, sig2):
