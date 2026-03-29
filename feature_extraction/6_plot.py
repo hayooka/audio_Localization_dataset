@@ -22,7 +22,7 @@ MIC_NAMES  = ["mic_right", "mic_front", "mic_left", "mic_back"]
 MIC_LABELS = ["Mic0 (Right)", "Mic1 (Front)", "Mic2 (Left)", "Mic3 (Back)"]
 MIC_COLORS = ["#378ADD", "#1D9E75", "#9F77DD", "#E24B4A"]
 RATE       = 16000
-ANALYSIS_SEC = 100
+ANALYSIS_SEC = 10
 
 # ========================
 # PROGRESS BAR
