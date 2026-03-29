@@ -17,17 +17,16 @@ from scipy.signal import hilbert
 # SETTINGS
 # ========================
 DATASETS = {
-    'E1': r'C:\Users\ahmma\Desktop\farah\datasetE1',
-    'E2': r'C:\Users\ahmma\Desktop\farah\datasetE2',
+    'DATA': r'C:\Users\ahmma\Desktop\farah\(24 angles)dataset',
 }
 OUTPUT_DIR = r'C:\Users\ahmma\Desktop\farah\features'
 
-ANGLES    = [0, 45, 90, 135, 180, 225, 270, 315]
+ANGLES = list(range(0, 360, 15))
 MICS      = ['mic_right', 'mic_front', 'mic_left', 'mic_back']
 RATE      = 16000
 CHUNK_SEC = 0.03  # 30ms = 480 samples at 16kHz
 
-POSITION_TO_LABEL = {0: 0, 45: 1, 90: 2, 135: 3, 180: 4, 225: 5, 270: 6, 315: 7}
+POSITION_TO_LABEL = {angle: i for i, angle in enumerate(ANGLES)}
 
 # ========================
 # FEATURE FUNCTIONS
