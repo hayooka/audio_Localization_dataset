@@ -24,7 +24,9 @@ OUTPUT_DIR = r'C:\Users\ahmma\Desktop\farah\features'
 ANGLES = list(range(0, 360, 15))
 MICS      = ['mic_right', 'mic_front', 'mic_left', 'mic_back']
 RATE      = 16000
-CHUNK_SEC = 0.03  # 30ms = 480 samples at 16kHz
+CHUNK_SEC = 0.03  # 50ms = 800 samples at 16kHz
+N_MELS    = 40
+N_FFT     = 1024  # next power of 2 >= 800
 
 POSITION_TO_LABEL = {angle: i for i, angle in enumerate(ANGLES)}
 
@@ -44,6 +46,26 @@ def get_ipd(sig1, sig2):
     a1 = np.angle(hilbert(sig1))  # type: ignore[arg-type]
     a2 = np.angle(hilbert(sig2))  # type: ignore[arg-type]
     return float(np.mean(np.degrees(np.arctan2(np.sin(a1 - a2), np.cos(a1 - a2)))))
+
+def _build_mel_filterbank():
+    def hz_to_mel(f): return 2595 * np.log10(1 + f / 700)
+    def mel_to_hz(m): return 700 * (10 ** (m / 2595) - 1)
+    mel_pts = np.linspace(hz_to_mel(0), hz_to_mel(RATE / 2), N_MELS + 2)
+    hz_pts  = mel_to_hz(mel_pts)
+    bins    = np.floor((N_FFT + 1) * hz_pts / RATE).astype(int)
+    fb = np.zeros((N_MELS, N_FFT // 2 + 1))
+    for m in range(1, N_MELS + 1):
+        l, c, r = bins[m - 1], bins[m], bins[m + 1]
+        fb[m - 1, l:c] = (np.arange(l, c) - l) / (c - l + 1e-10)
+        fb[m - 1, c:r] = (r - np.arange(c, r)) / (r - c + 1e-10)
+    return fb
+
+MEL_FB = _build_mel_filterbank()
+
+def get_logmel_energy(chunk):
+    """Log-mel energy vector of shape (N_MELS,) for one chunk."""
+    power = np.abs(np.fft.rfft(chunk, n=N_FFT)) ** 2
+    return np.log(MEL_FB @ power + 1e-10)
 
 def get_gcc_phat(sig1, sig2):
     fft_len = 2 * len(sig1)
@@ -80,7 +102,8 @@ def extract_chunks(base, angle, duration):
         e = s + chunk_samples
         ch = {m: signals[m][s:e] for m in MICS}
 
-        rms_feats = [rms(ch[m]) for m in MICS]
+        rms_feats    = [rms(ch[m]) for m in MICS]
+        logmel_feats = [get_logmel_energy(ch[m]) for m in MICS]  # 4 x (N_MELS,)
 
         ipd_feats = [
             get_ipd(ch['mic_right'], ch['mic_front']),
@@ -100,10 +123,11 @@ def extract_chunks(base, angle, duration):
             'position': angle,
             'chunk':    ci,
             'label':    POSITION_TO_LABEL[angle],
-            **{f'rms_{MICS[i]}':       rms_feats[i]  for i in range(4)},
-            **{f'ipd_pair{i}':          ipd_feats[i]  for i in range(3)},
-            **{f'gcc_tdoa_{i}':         gcc_tdoa[i]   for i in range(6)},
-            **{f'gcc_strength_{i}':     gcc_str[i]    for i in range(6)},
+            **{f'rms_{MICS[i]}':            rms_feats[i]       for i in range(4)},
+            **{f'ipd_pair{i}':              ipd_feats[i]       for i in range(3)},
+            **{f'gcc_tdoa_{i}':             gcc_tdoa[i]        for i in range(6)},
+            **{f'gcc_strength_{i}':         gcc_str[i]         for i in range(6)},
+            **{f'logmel_{MICS[i]}_b{b}':    logmel_feats[i][b] for i in range(4) for b in range(N_MELS)},
         })
 
     return samples
@@ -129,7 +153,8 @@ for duration, split_name in [('5min', 'train'), ('3min', 'test')]:
                 print(f'  {angle:>3}°  ->  MISSING')
 
         df = pd.DataFrame(samples)
-        out_path = os.path.join(OUTPUT_DIR, f'{split_name}_{ds_name}.csv')
+        chunk_ms = int(CHUNK_SEC * 1000)
+        out_path = os.path.join(OUTPUT_DIR, f'{split_name}_{ds_name}{chunk_ms}.csv')
         df.to_csv(out_path, index=False)
         print(f'\n  Saved: {out_path}')
         print(f'  Rows: {len(df)}  |  Columns: {len(df.columns)}  |  Classes: {df["label"].nunique()}')
