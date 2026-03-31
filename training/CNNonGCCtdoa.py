@@ -35,9 +35,13 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 _MICS   = ['mic_right', 'mic_front', 'mic_left', 'mic_back']
 _N_MELS = 40
 
+_GCC_VEC_SIZE = 100
+_N_PAIRS      = 6
+
 FEATURE_COLS = [
     'gcc_tdoa_0', 'gcc_tdoa_1', 'gcc_tdoa_2',
     'gcc_tdoa_3', 'gcc_tdoa_4', 'gcc_tdoa_5',
+    *[f'gcc_vec_{i}_t{t}' for i in range(_N_PAIRS) for t in range(_GCC_VEC_SIZE)],
 ]
 
 RMS_COLS      = ['rms_mic_right', 'rms_mic_front', 'rms_mic_left', 'rms_mic_back']
@@ -71,10 +75,7 @@ class LocalizationCNN(nn.Module):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def prepare(X_tr_raw, y_tr_raw, X_te_raw, y_te_raw, X_rms=None):
-    # # augment train only: original + noise + gain + time-shift copies
-    # X_tr_aug = augment_all(X_tr_raw.astype(np.float32), _LOGMEL_IDX, X_rms)
-    # y_tr_aug = np.tile(y_tr_raw, 4).astype(np.int64)
-    # print(f'  Augmented train: {len(X_tr_raw)} → {len(X_tr_aug)} samples')
+
     X_tr_aug = X_tr_raw.astype(np.float32)
     y_tr_aug = y_tr_raw.astype(np.int64)
 
@@ -83,11 +84,22 @@ def prepare(X_tr_raw, y_tr_raw, X_te_raw, y_te_raw, X_rms=None):
     X_te = scaler.transform(X_te_raw.astype(np.float32))
     return X_tr, y_tr_aug, X_te, y_te_raw.astype(np.int64), scaler
 
+def eval_batched(model, X_te_t, y_te, batch_size=512):
+    """Evaluate model in batches to avoid GPU OOM on large test sets."""
+    all_preds = []
+    model.eval()
+    with torch.no_grad():
+        for i in range(0, len(X_te_t), batch_size):
+            xb = X_te_t[i:i+batch_size].to(DEVICE)
+            all_preds.append(model(xb).argmax(1).cpu())
+    preds = torch.cat(all_preds).numpy()
+    acc   = (preds == y_te).mean()
+    return acc, preds
+
 def train_and_eval(X_tr, y_tr, X_te, y_te, label):
     X_tr_t = torch.tensor(X_tr).float().unsqueeze(1)
     y_tr_t = torch.tensor(y_tr)
-    X_te_t = torch.tensor(X_te).float().unsqueeze(1).to(DEVICE)
-    y_te_t = torch.tensor(y_te).to(DEVICE)
+    X_te_t = torch.tensor(X_te).float().unsqueeze(1)  # stays on CPU
 
     loader = DataLoader(TensorDataset(X_tr_t, y_tr_t),
                         batch_size=BATCH_SIZE, shuffle=True)
@@ -115,9 +127,7 @@ def train_and_eval(X_tr, y_tr, X_te, y_te, label):
             total      += len(yb)
         scheduler.step()
 
-        model.eval()
-        with torch.no_grad():
-            te_acc = (model(X_te_t).argmax(1) == y_te_t).float().mean().item()
+        te_acc, _ = eval_batched(model, X_te_t, y_te)
         train_acc_hist.append(correct / total)
         test_acc_hist.append(te_acc)
         loss_hist.append(total_loss / total)
@@ -132,11 +142,8 @@ def train_and_eval(X_tr, y_tr, X_te, y_te, label):
 
     if es.best_model is not None:
         model.load_state_dict(es.best_model)
-    model.eval()
-    with torch.no_grad():
-        preds = model(X_te_t).argmax(1).cpu().numpy()
-
-    acc = (preds == y_te).mean() * 100
+    acc_frac, preds = eval_batched(model, X_te_t, y_te)
+    acc = acc_frac * 100
     print(f'\n  {label}: {acc:.2f}%')
     print(classification_report(y_te, preds,
           target_names=[f'{a}deg' for a in ANGLES], zero_division=0))
@@ -174,7 +181,7 @@ print(f'\nTrain (80%): {len(X_tr80)}  Val (20%): {len(X_val20)}  Test: {len(X_te
 # ── Run experiments ───────────────────────────────────────────────────────────
 experiments = [
     ('S1: 80% train -> 20% train', X_tr80, y_tr80, X_val20, y_val20, X_rms80),
-    ('S2: 80% train -> test',      X_tr80, y_tr80, X_te,    y_te,    X_rms80),
+    ('S2: 80% train -> test',      X_tr80, y_tr80, X_te,    y_te,    X_rms80)
 ]
 
 results = {}
@@ -199,12 +206,18 @@ for name, Xtr, ytr, Xte, yte, Xrms in experiments:
         print(f'  Model saved: {save_path}')
 
 # ── Summary table ─────────────────────────────────────────────────────────────
-print(f'\n{"="*40}')
-print('  RESULTS SUMMARY')
-print(f'{"="*40}')
-for name, r in results.items():
-    print(f'  {name:<35}  {r["acc"]:>6.2f}%')
-print(f'{"="*40}')
+summary_lines = [
+    f'\n{"="*40}',
+    '  RESULTS SUMMARY',
+    f'{"="*40}',
+    *[f'  {name:<35}  {r["acc"]:>6.2f}%' for name, r in results.items()],
+    f'{"="*40}',
+]
+print('\n'.join(summary_lines))
+summary_path = os.path.join(RESULTS_DIR, f'summary_{FEATURE_TAG}.txt')
+with open(summary_path, 'w') as f:
+    f.write('\n'.join(summary_lines) + '\n')
+print(f'Summary saved: {summary_path}')
 
 # ── Plots ─────────────────────────────────────────────────────────────────────
 fig, axes = plt.subplots(3, 2, figsize=(14, 14))
