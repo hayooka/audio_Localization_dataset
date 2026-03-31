@@ -4,7 +4,14 @@ Feature Extraction — Sound Localization
 Processes (24 angles)dataset.
 5min recordings -> train.csv
 3min recordings -> test.csv
-Features per 30ms chunk: RMS (4 mics), IPD (3 pairs), GCC-PHAT TDOA + strength (6 pairs)
+Features per 30ms chunk:
+  RMS            (4 mics)
+  IPD scalar     (3 pairs)
+  IPD mel        (3 pairs × 40 bands = 120)
+  GCC-PHAT TDOA + strength (6 pairs each = 12)
+  GCC vector     (6 pairs × 100 points = 600)
+  Log-mel        (4 mics × 40 bands = 160)
+  Total: 4 + 3 + 120 + 12 + 600 + 160 = 899 features
 """
 
 import numpy as np
@@ -24,7 +31,7 @@ OUTPUT_DIR = r'C:\Users\ahmma\Desktop\farah\features'
 ANGLES = list(range(0, 360, 15))
 MICS      = ['mic_right', 'mic_front', 'mic_left', 'mic_back']
 RATE      = 16000
-CHUNK_SEC = 0.03  # 50ms = 800 samples at 16kHz
+CHUNK_SEC = 0.03  # 30ms = 800 samples at 16kHz
 N_MELS    = 40
 N_FFT     = 1024  # next power of 2 >= 800
 
@@ -47,6 +54,20 @@ def get_ipd(sig1, sig2):
     a2 = np.angle(hilbert(sig2))  # type: ignore[arg-type]
     return float(np.mean(np.degrees(np.arctan2(np.sin(a1 - a2), np.cos(a1 - a2)))))
 
+def get_ipd_mel(sig1, sig2):
+    """IPD per mel band — shape (N_MELS,).
+    For each mel band, compute the energy-weighted mean phase difference
+    across the frequency bins belonging to that band."""
+    X1 = np.fft.rfft(sig1, n=N_FFT)
+    X2 = np.fft.rfft(sig2, n=N_FFT)
+    # per-bin phase difference
+    phase_diff = np.angle(X1 * np.conj(X2))          # (N_FFT//2+1,)
+    power      = np.abs(X1) * np.abs(X2) + 1e-10     # energy weight
+    # project onto mel bands using weighted sum / total weight per band
+    weighted   = MEL_FB @ (phase_diff * power)        # (N_MELS,)
+    weights    = MEL_FB @ power                       # (N_MELS,)
+    return (weighted / (weights + 1e-10)).astype(np.float32)
+
 def _build_mel_filterbank():
     def hz_to_mel(f): return 2595 * np.log10(1 + f / 700)
     def mel_to_hz(m): return 700 * (10 ** (m / 2595) - 1)
@@ -67,6 +88,8 @@ def get_logmel_energy(chunk):
     power = np.abs(np.fft.rfft(chunk, n=N_FFT)) ** 2
     return np.log(MEL_FB @ power + 1e-10)
 
+GCC_VECTOR_SIZE = 100  # points to keep around the GCC peak centre
+
 def get_gcc_phat(sig1, sig2):
     fft_len = 2 * len(sig1)
     X1  = np.fft.rfft(sig1, n=fft_len)
@@ -81,6 +104,26 @@ def get_gcc_phat(sig1, sig2):
     tdoa_ms  = float((peak_idx / RATE) * 1000)
     strength = float(np.max(gcc) / (np.std(gcc) + 1e-10))
     return tdoa_ms, strength
+
+def get_gcc_vector(sig1, sig2):
+    """Full GCC-PHAT function centred at zero-lag, clipped to GCC_VECTOR_SIZE points."""
+    fft_len = 2 * len(sig1)
+    X1  = np.fft.rfft(sig1, n=fft_len)
+    X2  = np.fft.rfft(sig2, n=fft_len)
+    Pxx = X1 * np.conj(X2)
+    mag = np.abs(Pxx)
+    mag[mag < 1e-10] = 1e-10
+    gcc = np.fft.irfft(Pxx / mag, n=fft_len)
+    # centre: roll so zero-lag is at the middle
+    gcc = np.roll(gcc, len(gcc) // 2)
+    centre = len(gcc) // 2
+    half   = GCC_VECTOR_SIZE // 2
+    gcc    = gcc[centre - half : centre + half]
+    # normalise to [-1, 1]
+    mx = np.max(np.abs(gcc))
+    if mx > 0:
+        gcc = gcc / mx
+    return gcc.astype(np.float32)
 
 # ========================
 # EXTRACT FROM ONE FILE SET
@@ -110,24 +153,35 @@ def extract_chunks(base, angle, duration):
             get_ipd(ch['mic_right'], ch['mic_left']),
             get_ipd(ch['mic_front'], ch['mic_back']),
         ]
+        ipd_mel_feats = [
+            get_ipd_mel(ch['mic_right'], ch['mic_front']),
+            get_ipd_mel(ch['mic_right'], ch['mic_left']),
+            get_ipd_mel(ch['mic_front'], ch['mic_back']),
+        ]
 
-        gcc_tdoa, gcc_str = [], []
+        gcc_tdoa, gcc_str, gcc_vecs = [], [], []
+        pair_idx = 0
         for i in range(4):
             for j in range(i + 1, 4):
                 t, s_val = get_gcc_phat(ch[MICS[i]], ch[MICS[j]])
+                vec      = get_gcc_vector(ch[MICS[i]], ch[MICS[j]])
                 gcc_tdoa.append(t)
                 gcc_str.append(s_val)
+                gcc_vecs.append(vec)
+                pair_idx += 1
 
         samples.append({
             'dataset': os.path.basename(base),
             'position': angle,
             'chunk':    ci,
             'label':    POSITION_TO_LABEL[angle],
-            **{f'rms_{MICS[i]}':            rms_feats[i]       for i in range(4)},
-            **{f'ipd_pair{i}':              ipd_feats[i]       for i in range(3)},
-            **{f'gcc_tdoa_{i}':             gcc_tdoa[i]        for i in range(6)},
-            **{f'gcc_strength_{i}':         gcc_str[i]         for i in range(6)},
-            **{f'logmel_{MICS[i]}_b{b}':    logmel_feats[i][b] for i in range(4) for b in range(N_MELS)},
+            **{f'rms_{MICS[i]}':                rms_feats[i]          for i in range(4)},
+            **{f'ipd_pair{i}':                  ipd_feats[i]          for i in range(3)},
+            **{f'ipd_mel_{i}_b{b}':             ipd_mel_feats[i][b]   for i in range(3) for b in range(N_MELS)},
+            **{f'gcc_tdoa_{i}':                 gcc_tdoa[i]           for i in range(6)},
+            **{f'gcc_strength_{i}':             gcc_str[i]            for i in range(6)},
+            **{f'gcc_vec_{i}_t{t}':             gcc_vecs[i][t]        for i in range(6) for t in range(GCC_VECTOR_SIZE)},
+            **{f'logmel_{MICS[i]}_b{b}':        logmel_feats[i][b]    for i in range(4) for b in range(N_MELS)},
         })
 
     return samples

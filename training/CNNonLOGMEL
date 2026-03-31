@@ -83,11 +83,20 @@ def prepare(X_tr_raw, y_tr_raw, X_te_raw, y_te_raw, X_rms=None):
     X_te = scaler.transform(X_te_raw.astype(np.float32))
     return X_tr, y_tr_aug, X_te, y_te_raw.astype(np.int64), scaler
 
+def eval_batched(model, X_te_t, y_te, batch_size=512):
+    all_preds = []
+    model.eval()
+    with torch.no_grad():
+        for i in range(0, len(X_te_t), batch_size):
+            xb = X_te_t[i:i+batch_size].to(DEVICE)
+            all_preds.append(model(xb).argmax(1).cpu())
+    preds = torch.cat(all_preds).numpy()
+    return (preds == y_te).mean(), preds
+
 def train_and_eval(X_tr, y_tr, X_te, y_te, label):
     X_tr_t = torch.tensor(X_tr).float().unsqueeze(1)
     y_tr_t = torch.tensor(y_tr)
-    X_te_t = torch.tensor(X_te).float().unsqueeze(1).to(DEVICE)
-    y_te_t = torch.tensor(y_te).to(DEVICE)
+    X_te_t = torch.tensor(X_te).float().unsqueeze(1)  # stays on CPU
 
     loader = DataLoader(TensorDataset(X_tr_t, y_tr_t),
                         batch_size=BATCH_SIZE, shuffle=True)
@@ -115,9 +124,7 @@ def train_and_eval(X_tr, y_tr, X_te, y_te, label):
             total      += len(yb)
         scheduler.step()
 
-        model.eval()
-        with torch.no_grad():
-            te_acc = (model(X_te_t).argmax(1) == y_te_t).float().mean().item()
+        te_acc, _ = eval_batched(model, X_te_t, y_te)
         train_acc_hist.append(correct / total)
         test_acc_hist.append(te_acc)
         loss_hist.append(total_loss / total)
@@ -132,11 +139,8 @@ def train_and_eval(X_tr, y_tr, X_te, y_te, label):
 
     if es.best_model is not None:
         model.load_state_dict(es.best_model)
-    model.eval()
-    with torch.no_grad():
-        preds = model(X_te_t).argmax(1).cpu().numpy()
-
-    acc = (preds == y_te).mean() * 100
+    acc_frac, preds = eval_batched(model, X_te_t, y_te)
+    acc = acc_frac * 100
     print(f'\n  {label}: {acc:.2f}%')
     print(classification_report(y_te, preds,
           target_names=[f'{a}deg' for a in ANGLES], zero_division=0))
@@ -199,12 +203,18 @@ for name, Xtr, ytr, Xte, yte, Xrms in experiments:
         print(f'  Model saved: {save_path}')
 
 # ── Summary table ─────────────────────────────────────────────────────────────
-print(f'\n{"="*40}')
-print('  RESULTS SUMMARY')
-print(f'{"="*40}')
-for name, r in results.items():
-    print(f'  {name:<35}  {r["acc"]:>6.2f}%')
-print(f'{"="*40}')
+summary_lines = [
+    f'\n{"="*40}',
+    '  RESULTS SUMMARY',
+    f'{"="*40}',
+    *[f'  {name:<35}  {r["acc"]:>6.2f}%' for name, r in results.items()],
+    f'{"="*40}',
+]
+print('\n'.join(summary_lines))
+summary_path = os.path.join(RESULTS_DIR, f'summary_{FEATURE_TAG}.txt')
+with open(summary_path, 'w') as f:
+    f.write('\n'.join(summary_lines) + '\n')
+print(f'Summary saved: {summary_path}')
 
 # ── Plots ─────────────────────────────────────────────────────────────────────
 fig, axes = plt.subplots(3, 2, figsize=(14, 14))
