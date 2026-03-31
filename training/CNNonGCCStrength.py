@@ -16,7 +16,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
-from feature_extraction.data_processing import augment_all, EarlyStopping
+from data_processing import augment_all, EarlyStopping
 
 # ── Config ────────────────────────────────────────────────────────────────────
 FEATURES_DIR = r'C:\Users\ahmma\Desktop\farah\features'
@@ -72,12 +72,12 @@ class LocalizationCNN(nn.Module):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def prepare(X_tr_raw, y_tr_raw, X_te_raw, y_te_raw, X_rms=None):
-    # augment train only: original + noise + gain + time-shift copies
-    X_tr_aug = augment_all(X_tr_raw.astype(np.float32), _LOGMEL_IDX, X_rms)
-    y_tr_aug = np.tile(y_tr_raw, 4).astype(np.int64)
-    print(f'  Augmented train: {len(X_tr_raw)} → {len(X_tr_aug)} samples')
-    #X_tr_aug = X_tr_raw.astype(np.float32)
-    #y_tr_aug = y_tr_raw.astype(np.int64)
+    # # augment train only: original + noise + gain + time-shift copies
+    # X_tr_aug = augment_all(X_tr_raw.astype(np.float32), _LOGMEL_IDX, X_rms)
+    # y_tr_aug = np.tile(y_tr_raw, 4).astype(np.int64)
+    # print(f'  Augmented train: {len(X_tr_raw)} → {len(X_tr_aug)} samples')
+    X_tr_aug = X_tr_raw.astype(np.float32)
+    y_tr_aug = y_tr_raw.astype(np.int64)
 
     scaler = StandardScaler()
     X_tr = scaler.fit_transform(X_tr_aug)
