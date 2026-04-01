@@ -83,6 +83,14 @@ def prepare(X_tr_raw, y_tr_raw, X_te_raw, y_te_raw, X_rms=None):
     X_te = scaler.transform(X_te_raw.astype(np.float32))
     return X_tr, y_tr_aug, X_te, y_te_raw.astype(np.int64), scaler
 
+def angular_metrics(y_true, y_pred):
+    """MAE and RMSE in degrees, accounting for circular wrap-around."""
+    true_deg = np.array([ANGLES[i] for i in y_true], dtype=np.float32)
+    pred_deg = np.array([ANGLES[i] for i in y_pred], dtype=np.float32)
+    diff = np.abs(true_deg - pred_deg)
+    diff = np.minimum(diff, 360 - diff)   # wrap-around
+    return float(np.mean(diff)), float(np.sqrt(np.mean(diff ** 2)))
+
 def eval_batched(model, X_te_t, y_te, batch_size=512):
     all_preds = []
     model.eval()
@@ -141,11 +149,12 @@ def train_and_eval(X_tr, y_tr, X_te, y_te, label):
         model.load_state_dict(es.best_model)
     acc_frac, preds = eval_batched(model, X_te_t, y_te)
     acc = acc_frac * 100
-    print(f'\n  {label}: {acc:.2f}%')
+    mae, rmse = angular_metrics(y_te, preds)
+    print(f'\n  {label}: {acc:.2f}%  MAE={mae:.1f}°  RMSE={rmse:.1f}°')
     print(classification_report(y_te, preds,
           target_names=[f'{a}deg' for a in ANGLES], zero_division=0))
 
-    return acc, preds, y_te, train_acc_hist, test_acc_hist, loss_hist, model
+    return acc, preds, y_te, train_acc_hist, test_acc_hist, loss_hist, model, mae, rmse
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 print(f'Device: {DEVICE}')
@@ -185,11 +194,11 @@ results = {}
 for name, Xtr, ytr, Xte, yte, Xrms in experiments:
     print(f'\n{"="*55}\n  {name}\n  Train: {len(Xtr)}  Test: {len(Xte)}\n{"="*55}')
     X_tr_s, y_tr_s, X_te_s, y_te_s, scaler = prepare(Xtr, ytr, Xte, yte, Xrms)
-    acc, preds, y_te_arr, tr_hist, te_hist, loss_h, model = train_and_eval(
+    acc, preds, y_te_arr, tr_hist, te_hist, loss_h, model, mae, rmse = train_and_eval(
         X_tr_s, y_tr_s, X_te_s, y_te_s, name)
     results[name] = dict(acc=acc, preds=preds, y_te=y_te_arr,
                          tr_hist=tr_hist, te_hist=te_hist,
-                         loss_hist=loss_h, model=model)
+                         loss_hist=loss_h, model=model, mae=mae, rmse=rmse)
 
     # Save S2 model (trained on 80% of train, evaluated on real test set)
     if name == 'S2: 80% train -> test':
@@ -204,11 +213,14 @@ for name, Xtr, ytr, Xte, yte, Xrms in experiments:
 
 # ── Summary table ─────────────────────────────────────────────────────────────
 summary_lines = [
-    f'\n{"="*40}',
+    f'\n{"="*60}',
     '  RESULTS SUMMARY',
-    f'{"="*40}',
-    *[f'  {name:<35}  {r["acc"]:>6.2f}%' for name, r in results.items()],
-    f'{"="*40}',
+    f'{"="*60}',
+    f'  {"Scenario":<35}  {"Acc":>6}  {"MAE":>7}  {"RMSE":>7}',
+    f'  {"-"*55}',
+    *[f'  {name:<35}  {r["acc"]:>5.2f}%  {r["mae"]:>6.1f}°  {r["rmse"]:>6.1f}°'
+      for name, r in results.items()],
+    f'{"="*60}',
 ]
 print('\n'.join(summary_lines))
 summary_path = os.path.join(RESULTS_DIR, f'summary_{FEATURE_TAG}.txt')
