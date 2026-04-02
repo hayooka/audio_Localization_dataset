@@ -31,9 +31,10 @@ OUTPUT_DIR = r'C:\Users\ahmma\Desktop\farah\features'
 ANGLES = list(range(0, 360, 15))
 MICS      = ['mic_right', 'mic_front', 'mic_left', 'mic_back']
 RATE      = 16000
-CHUNK_SEC = 0.03  # 30ms = 800 samples at 16kHz
+CHUNK_SEC = 0.08  # 80ms = 1280 samples at 16kHz
 N_MELS    = 40
-N_FFT     = 1024  # next power of 2 >= 800
+N_FFT     = 2048  # next power of 2 >= 1280
+
 
 POSITION_TO_LABEL = {angle: i for i, angle in enumerate(ANGLES)}
 
