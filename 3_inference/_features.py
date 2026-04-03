@@ -132,9 +132,11 @@ def extract_chunk(ch):
     ]).astype(np.float32)
 
 
-def extract_features(path_right, path_front, path_left, path_back):
+def extract_features(path_right, path_front, path_left, path_back, max_seconds=5):
     """
     Load 4 WAV files and extract features for every 30ms chunk.
+    max_seconds : only process this many seconds from the start (default 5).
+                  None = process entire file.
     Returns np.array of shape (n_chunks, 899).
     """
     signals = {
@@ -144,6 +146,8 @@ def extract_features(path_right, path_front, path_left, path_back):
         'mic_back':  _load_wav(path_back),
     }
     n_chunks = min(len(s) for s in signals.values()) // CHUNK_SAMPLES
+    if max_seconds is not None:
+        n_chunks = min(n_chunks, int(max_seconds * RATE / CHUNK_SAMPLES))
     features = []
     for ci in range(n_chunks):
         s = ci * CHUNK_SAMPLES
