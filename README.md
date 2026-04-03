@@ -1,11 +1,17 @@
-# ALGuide — Sound Source Localization Dataset & System
+# ALGuide — Sound Source Localization
+
+A complete pipeline for sound source localization using a **ReSpeaker 4-microphone array**, covering **24 angles** across a full 360° in 15° steps, powered by a pretrained 1D CNN classifier.
+
+---
 
 ## Quick Start
 
+**Install:**
 ```bash
 pip install git+https://github.com/hayooka/audio_Localization_dataset.git
 ```
 
+**WAV files** (your own recordings):
 ```python
 from audioloc import predict
 
@@ -14,34 +20,18 @@ angle, chunks = predict('mic_right.wav', 'mic_front.wav',
 print(f'Direction: {angle}°')
 ```
 
-> First call automatically downloads the pretrained weights (~113 MB) and caches them in `~/.audioloc/`.
+**Real-time** (live ReSpeaker input):
+```bash
+pip install "audioloc[realtime]"   # adds sounddevice
+```
+```python
+from audioloc import predict_realtime
+
+predict_realtime(device=25)        # device index from your system
+```
+
+> First call downloads the pretrained weights (~113 MB) once to `~/.audioloc/`.
 > **Requires:** Python ≥ 3.8, PyTorch, NumPy, SciPy
-
----
-
-A complete pipeline for sound source localization using a **ReSpeaker 4-microphone array** (front, right, back, left), covering **24 angles** across a full 360°, processed with feature extraction and a CNN classifier.
-
----
-
-## Dataset
-
-Audio data was collected using a ReSpeaker 4-microphone array connected to a Raspberry Pi 5. The speaker was placed **1.75 metres** from the ReSpeaker and moved to each angle while the ReSpeaker remained fixed. Recordings were captured at **24 angles** (0° to 345° in 15° increments) in a complex acoustic environment with a high probability of echo.
-
-Two recording sessions were made per angle:
-- **5 minutes** — same speech content across all angles (used for training)
-- **3 minutes** — unique speech recording per angle (used for testing)
-
-All recordings are raw WAV files (16-bit, 16 kHz, one file per microphone channel).
-
-```
-(24 angles)dataset/
-└── 0/ 15/ 30/ ... 345/
-    └── speakerM/
-        ├── 5min/   ← mic_front.wav  mic_right.wav  mic_back.wav  mic_left.wav
-        └── 3min/   ← mic_front.wav  mic_right.wav  mic_back.wav  mic_left.wav
-```
-
-> Dataset files are stored locally and excluded from version control (see `.gitignore`).
 
 ---
 
@@ -49,56 +39,54 @@ All recordings are raw WAV files (16-bit, 16 kHz, one file per microphone channe
 
 ```
 audio_Localization_dataset/
-├── Respaeker/
-│   └── data_collection/
-│       ├── collecting_data_set.py    ← ReSpeaker 4-mic recorder
-│       └── data_collection.py        ← older 2-mic recorder
-├── Tasks/
-│   └── localization/
-│       ├── Respeaker_localization.py ← early real-time GCC-PHAT + Gammatone localization (4 directions)
-│       └── loc_code.py               ← older 2-mic version
-├── feature_extraction/
-│   ├── audionTOfeatures.py           ← WAV → IPD, GCC-PHAT, log-mel → CSV (30ms chunks)
-│   └── 6_plot.py                     ← feature separability analysis & plots
-├── training/
-│   ├── data_processing.py            ← augmentation, early stopping utilities
-│   ├── cnn.py                        ← CNN on all 175 features (IPD + GCC + log-mel)
-│   ├── CNNonIPD.py                   ← CNN on IPD features only
-│   ├── CNNonGCCtdoa.py               ← CNN on GCC-TDOA features only
-│   ├── CNNonGCCStrength.py           ← CNN on GCC strength features only
-│   ├── CNNonLOGMEL                   ← CNN on log-mel features only
-│   └── model_E1.pt                   ← saved model (S2: trained on 80% of 5min, tested on 3min)
-├── inference/
-│   ├── realtime_inference.py         ← live prediction using trained model
-│   └── test.py                       ← offline inference script
+├── 1_data_to_features/
+│   ├── features_to_csv.py        ← WAV → features → CSV (30ms chunks)
+│   └── 6_plot.py                 ← feature separability analysis & plots
+├── 2_training/
+│   ├── data_processing.py        ← augmentation, early stopping
+│   ├── train_ALL_features.py     ← CNN on all features  ← main model
+│   ├── train_IPD.py              ← CNN on IPD only
+│   ├── train_GCC_TDOA.py         ← CNN on GCC-TDOA only
+│   ├── train_GCC_Strength.py     ← CNN on GCC strength only
+│   ├── train_LogMel.py           ← CNN on log-mel only
+│   ├── train_RMS.py              ← CNN on RMS only
+│   └── audioLOC.pt               ← pretrained weights (S2 model)
+├── 3_inference/                  ← installable audioloc package
+│   ├── __init__.py               ← predict() + predict_realtime()
+│   └── _features.py              ← feature extraction from WAV / live audio
+├── 4_data_collection/
+│   ├── record_4mic_ReSpeaker.py  ← 4-mic recorder (6-ch ReSpeaker, ch 2–5)
+│   └── record_2mic_old.py        ← older 2-mic recorder
 ├── notebooks/
-│   └── analyze_features.ipynb        ← feature analysis, RMS distribution, silence detection
-├── Results/                          ← saved result plots (one per feature set)
-└── Dataset/
-    └── .CVS/                         ← extracted feature CSVs (train/test)
+│   └── analyze_features.ipynb    ← RMS distribution, silence, separability
+├── Results/                      ← plots & summaries per feature set
+└── pyproject.toml                ← pip package config
 ```
 
 ---
 
 ## Pipeline
 
-1. **Record** → `Respaeker/data_collection/` — capture 5min + 3min WAV per angle
-2. **Extract features** → `feature_extraction/audionTOfeatures.py` — 30ms chunks → IPD (3) + GCC-TDOA (6) + GCC-strength (6) + log-mel (160) = **175 features** → CSV
-3. **Analyse** → `notebooks/analyze_features.ipynb` — inspect RMS distribution, silence, feature separability
-4. **Train** → `training/cnn.py` (or per-feature variants) — 1D CNN, 24-class classification, results saved to `Results/`
-5. **Infer** → `inference/realtime_inference.py` — live direction prediction
+1. **Record** → `4_data_collection/record_4mic_ReSpeaker.py` — 5 min + 3 min WAV per angle
+2. **Extract** → `1_data_to_features/features_to_csv.py` — 30ms chunks → 899 features → CSV
+3. **Analyse** → `notebooks/analyze_features.ipynb` — inspect silence, feature separability
+4. **Train** → `2_training/train_ALL_features.py` — 1D CNN, 24-class, saves `audioLOC.pt`
+5. **Use** → `from audioloc import predict` or `predict_realtime()`
 
 ---
 
 ## Features
 
-| Feature | Dims | Method |
+| Feature | Dims | Description |
 |---|---|---|
-| IPD | 3 | Hilbert phase difference between mic pairs |
-| GCC-PHAT TDOA | 6 | Phase-weighted cross-correlation peak (ms) |
-| GCC Strength | 6 | Correlation peak sharpness (confidence) |
-| Log-mel spectrogram | 160 | 40 mel bands × 4 mics, 1024-pt FFT |
-| **Total** | **175** | |
+| RMS | 4 | Energy per mic |
+| IPD | 3 | Hilbert phase difference (3 mic pairs) |
+| IPD-mel | 120 | Phase difference weighted over 40 mel bands |
+| GCC-PHAT TDOA | 6 | Cross-correlation peak delay (ms), 6 pairs |
+| GCC Strength | 6 | Correlation peak sharpness, 6 pairs |
+| GCC vector | 600 | Full 100-sample GCC curve, 6 pairs |
+| Log-mel | 160 | 40 mel bands × 4 mics |
+| **Total** | **899** | |
 
 ---
 
@@ -106,8 +94,18 @@ audio_Localization_dataset/
 
 | Scenario | Train | Test | Purpose |
 |---|---|---|---|
-| S1 | 80% of 5min | 20% of 5min | Internal validation |
-| S2 | 80% of 5min | 3min (held-out) | Generalization to different speech content |
+| S1 | 80% of 5 min | 20% of 5 min | Internal validation |
+| S2 | 80% of 5 min | 3 min (held-out) | Generalization to unseen speech |
+
+---
+
+## Hardware
+
+- **Mic array:** ReSpeaker USB 4-mic array
+- **Host:** Raspberry Pi 5
+- **Distance:** speaker placed 1.75 m from ReSpeaker
+- **Angles:** 24 positions, 0°–345° in 15° steps
+- **Format:** 16-bit, 16 kHz, mono WAV per channel
 
 ---
 
