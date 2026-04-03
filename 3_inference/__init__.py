@@ -26,8 +26,16 @@ from ._features import extract_features, extract_chunk, MICS, CHUNK_SAMPLES, RAT
 _RMS_IDX = [ALL_FEATURE_COLS.index(c)
             for c in ['rms_mic_right', 'rms_mic_front', 'rms_mic_left', 'rms_mic_back']]
 
-_WEIGHTS_URL = 'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.0/audioLOC.pt'
-_CACHE_PATH  = os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC.pt')
+_MODELS = {
+    'all': {
+        'url':   'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.0/audioLOC.pt',
+        'cache': os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC.pt'),
+    },
+    'gcctdoa': {
+        'url':   'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.0/audioLOC_GCCTDOA.pt',
+        'cache': os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC_GCCTDOA.pt'),
+    },
+}
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 class _LocalizationCNN(nn.Module):
@@ -50,41 +58,44 @@ class _LocalizationCNN(nn.Module):
     def forward(self, x):
         return self.fc(self.conv(x))
 
-# ── Shared model loader ────────────────────────────────────────────────────────
-_state = {}
+# ── Model cache (one entry per model name) ────────────────────────────────────
+_states = {}   # { 'all': {...}, 'gcctdoa': {...} }
 
-def _load():
+def _load(model_name='all'):
+    if model_name not in _MODELS:
+        raise ValueError(f"Unknown model '{model_name}'. Choose from: {list(_MODELS)}")
+    cfg    = _MODELS[model_name]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    if not os.path.exists(_CACHE_PATH):
-        os.makedirs(os.path.dirname(_CACHE_PATH), exist_ok=True)
-        print('Downloading audioLOC weights (~113 MB)...')
-        urlretrieve(_WEIGHTS_URL, _CACHE_PATH)
+    if not os.path.exists(cfg['cache']):
+        os.makedirs(os.path.dirname(cfg['cache']), exist_ok=True)
+        print(f'Downloading {model_name} weights...')
+        urlretrieve(cfg['url'], cfg['cache'])
         print('Download complete.')
-    ckpt = torch.load(_CACHE_PATH, map_location=device, weights_only=False)
+    ckpt = torch.load(cfg['cache'], map_location=device, weights_only=False)
     feature_cols = ckpt['feature_cols']
     n_classes    = ckpt['model_state']['fc.9.bias'].shape[0]
     model = _LocalizationCNN(n_features=len(feature_cols), n_classes=n_classes).to(device)
     model.load_state_dict(ckpt['model_state'])
     model.eval()
-    # indices to select model's features from the full 899-feature vector
     col_idx = [ALL_FEATURE_COLS.index(c) for c in feature_cols]
-    _state.update(dict(
+    _states[model_name] = dict(
         model        = model,
         scaler_mean  = ckpt['scaler_mean'],
         scaler_std   = ckpt['scaler_std'],
         col_idx      = col_idx,
         angles       = list(range(0, 360, 360 // n_classes)),
         device       = device,
-    ))
+    )
 
-def _infer(X):
+def _infer(X, model_name):
     """Select model features, normalize, run inference. X is full 899-feature array."""
-    model       = _state['model']
-    scaler_mean = _state['scaler_mean']
-    scaler_std  = _state['scaler_std']
-    col_idx     = _state['col_idx']
-    angles      = _state['angles']
-    device      = _state['device']
+    st          = _states[model_name]
+    model       = st['model']
+    scaler_mean = st['scaler_mean']
+    scaler_std  = st['scaler_std']
+    col_idx     = st['col_idx']
+    angles      = st['angles']
+    device      = st['device']
     X_sel  = X[:, col_idx]
     X_norm = (X_sel - scaler_mean) / (scaler_std + 1e-10)
     X_t    = torch.tensor(X_norm).float().unsqueeze(1).to(device)
@@ -94,7 +105,7 @@ def _infer(X):
 
 # ── 1. WAV file prediction ─────────────────────────────────────────────────────
 def predict(path_right, path_front, path_left, path_back,
-            rms_threshold=100.0, max_seconds=5):
+            rms_threshold=100.0, max_seconds=5, model='all'):
     """
     Predict sound direction from 4 pre-recorded WAV files (16 kHz, mono).
 
@@ -105,9 +116,10 @@ def predict(path_right, path_front, path_left, path_back,
     rms_threshold : float
         Chunks below this RMS on any mic are skipped (silence removal).
     max_seconds : float or None
-        Only process this many seconds from the start of the file (default 5).
-        5 seconds = ~166 chunks, enough for reliable majority-vote prediction.
+        Only process this many seconds from the start (default 5).
         Pass None to process the entire file.
+    model : str
+        Which model to use: 'all' (default, all features) or 'gcctdoa'.
 
     Returns
     -------
@@ -116,8 +128,8 @@ def predict(path_right, path_front, path_left, path_back,
     per_chunk : list[int]
         Per-chunk angle predictions.
     """
-    if not _state:
-        _load()
+    if model not in _states:
+        _load(model)
 
     X = extract_features(path_right, path_front, path_left, path_back,
                          max_seconds=max_seconds)
@@ -127,8 +139,9 @@ def predict(path_right, path_front, path_left, path_back,
     if len(X) == 0:
         return 0, []
 
-    per_chunk, preds = _infer(X)
-    majority = _state['angles'][int(np.argmax(np.bincount(preds, minlength=len(_state['angles']))))]
+    per_chunk, preds = _infer(X, model)
+    angles  = _states[model]['angles']
+    majority = angles[int(np.argmax(np.bincount(preds, minlength=len(angles))))]
     return majority, per_chunk
 
 
