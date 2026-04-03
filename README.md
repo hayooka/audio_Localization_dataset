@@ -1,5 +1,24 @@
 # ALGuide — Sound Source Localization Dataset & System
 
+## Quick Start
+
+```bash
+pip install git+https://github.com/hayooka/audio_Localization_dataset.git
+```
+
+```python
+from audioloc import predict
+
+angle, chunks = predict('mic_right.wav', 'mic_front.wav',
+                        'mic_left.wav',  'mic_back.wav')
+print(f'Direction: {angle}°')
+```
+
+> First call automatically downloads the pretrained weights (~113 MB) and caches them in `~/.audioloc/`.
+> **Requires:** Python ≥ 3.8, PyTorch, NumPy, SciPy
+
+---
+
 A complete pipeline for sound source localization using a **ReSpeaker 4-microphone array** (front, right, back, left), covering **24 angles** across a full 360°, processed with feature extraction and a CNN classifier.
 
 ---
