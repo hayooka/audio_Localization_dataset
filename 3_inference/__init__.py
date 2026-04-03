@@ -93,7 +93,8 @@ def _infer(X):
     return [angles[p] for p in preds], preds
 
 # ── 1. WAV file prediction ─────────────────────────────────────────────────────
-def predict(path_right, path_front, path_left, path_back, rms_threshold=100.0):
+def predict(path_right, path_front, path_left, path_back,
+            rms_threshold=100.0, max_seconds=5):
     """
     Predict sound direction from 4 pre-recorded WAV files (16 kHz, mono).
 
@@ -103,6 +104,10 @@ def predict(path_right, path_front, path_left, path_back, rms_threshold=100.0):
         Path to each mic's WAV file.
     rms_threshold : float
         Chunks below this RMS on any mic are skipped (silence removal).
+    max_seconds : float or None
+        Only process this many seconds from the start of the file (default 5).
+        5 seconds = ~166 chunks, enough for reliable majority-vote prediction.
+        Pass None to process the entire file.
 
     Returns
     -------
@@ -114,7 +119,8 @@ def predict(path_right, path_front, path_left, path_back, rms_threshold=100.0):
     if not _state:
         _load()
 
-    X = extract_features(path_right, path_front, path_left, path_back)
+    X = extract_features(path_right, path_front, path_left, path_back,
+                         max_seconds=max_seconds)
 
     mask = (X[:, _RMS_IDX] >= rms_threshold).all(axis=1)
     X = X[mask]
