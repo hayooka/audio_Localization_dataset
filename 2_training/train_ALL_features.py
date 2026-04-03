@@ -200,7 +200,7 @@ print(f'\nTrain (80%): {len(X_tr80)}  Val (20%): {len(X_val20)}  Test: {len(X_te
 
 # ── Run experiments ───────────────────────────────────────────────────────────
 experiments = [
-    ('S1: 80% train -> 20% train', X_tr80, y_tr80, X_val20, y_val20, X_rms80),
+    #('S1: 80% train -> 20% train', X_tr80, y_tr80, X_val20, y_val20, X_rms80),
     ('S2: 80% train -> test',      X_tr80, y_tr80, X_te,    y_te,    X_rms80),
 ]
 
