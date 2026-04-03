@@ -9,6 +9,20 @@ N_FFT         = 1024
 GCC_VEC_SIZE  = 100
 MICS          = ['mic_right', 'mic_front', 'mic_left', 'mic_back']
 CHUNK_SAMPLES = int(CHUNK_SEC * RATE)
+_N_PAIRS      = 6
+
+# Full ordered list of ALL features extract_chunk() outputs (always 899)
+ALL_FEATURE_COLS = [
+    'rms_mic_right', 'rms_mic_front', 'rms_mic_left', 'rms_mic_back',
+    'ipd_pair0', 'ipd_pair1', 'ipd_pair2',
+    *[f'ipd_mel_{i}_b{b}' for i in range(3) for b in range(N_MELS)],
+    'gcc_tdoa_0', 'gcc_tdoa_1', 'gcc_tdoa_2',
+    'gcc_tdoa_3', 'gcc_tdoa_4', 'gcc_tdoa_5',
+    'gcc_strength_0', 'gcc_strength_1', 'gcc_strength_2',
+    'gcc_strength_3', 'gcc_strength_4', 'gcc_strength_5',
+    *[f'gcc_vec_{i}_t{t}' for i in range(_N_PAIRS) for t in range(GCC_VEC_SIZE)],
+    *[f'logmel_{mic}_b{b}' for mic in MICS for b in range(N_MELS)],
+]
 
 def _build_mel_filterbank():
     def hz_to_mel(f): return 2595 * np.log10(1 + f / 700)

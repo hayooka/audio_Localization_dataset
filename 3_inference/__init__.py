@@ -20,7 +20,11 @@ import torch
 import torch.nn as nn
 from urllib.request import urlretrieve
 
-from ._features import extract_features, extract_chunk, MICS, CHUNK_SAMPLES, RATE
+from ._features import extract_features, extract_chunk, MICS, CHUNK_SAMPLES, RATE, ALL_FEATURE_COLS
+
+# RMS indices are always positions 0-3 in ALL_FEATURE_COLS
+_RMS_IDX = [ALL_FEATURE_COLS.index(c)
+            for c in ['rms_mic_right', 'rms_mic_front', 'rms_mic_left', 'rms_mic_back']]
 
 _WEIGHTS_URL = 'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.0/audioLOC.pt'
 _CACHE_PATH  = os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC.pt')
@@ -62,23 +66,27 @@ def _load():
     model = _LocalizationCNN(n_features=len(feature_cols), n_classes=n_classes).to(device)
     model.load_state_dict(ckpt['model_state'])
     model.eval()
+    # indices to select model's features from the full 899-feature vector
+    col_idx = [ALL_FEATURE_COLS.index(c) for c in feature_cols]
     _state.update(dict(
         model        = model,
         scaler_mean  = ckpt['scaler_mean'],
         scaler_std   = ckpt['scaler_std'],
-        feature_cols = feature_cols,
+        col_idx      = col_idx,
         angles       = list(range(0, 360, 360 // n_classes)),
         device       = device,
     ))
 
 def _infer(X):
-    """Run the model on a (N, n_features) array. Returns list of angle predictions."""
+    """Select model features, normalize, run inference. X is full 899-feature array."""
     model       = _state['model']
     scaler_mean = _state['scaler_mean']
     scaler_std  = _state['scaler_std']
+    col_idx     = _state['col_idx']
     angles      = _state['angles']
     device      = _state['device']
-    X_norm = (X - scaler_mean) / (scaler_std + 1e-10)
+    X_sel  = X[:, col_idx]
+    X_norm = (X_sel - scaler_mean) / (scaler_std + 1e-10)
     X_t    = torch.tensor(X_norm).float().unsqueeze(1).to(device)
     with torch.no_grad():
         preds = model(X_t).argmax(1).cpu().numpy()
@@ -108,9 +116,7 @@ def predict(path_right, path_front, path_left, path_back, rms_threshold=100.0):
 
     X = extract_features(path_right, path_front, path_left, path_back)
 
-    rms_names = ['rms_mic_right', 'rms_mic_front', 'rms_mic_left', 'rms_mic_back']
-    rms_idx   = [_state['feature_cols'].index(c) for c in rms_names]
-    mask      = (X[:, rms_idx] >= rms_threshold).all(axis=1)
+    mask = (X[:, _RMS_IDX] >= rms_threshold).all(axis=1)
     X = X[mask]
     if len(X) == 0:
         return 0, []
