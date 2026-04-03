@@ -32,7 +32,7 @@ _MODELS = {
         'cache': os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC.pt'),
     },
     'gcctdoa': {
-        'url':   'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.0/audioLOC_GCCTDOA.pt',
+        'url':   'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.00/audioLOC_GCCTDOA.pt',
         'cache': os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC_GCCTDOA.pt'),
     },
 }
