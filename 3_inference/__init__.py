@@ -1,15 +1,15 @@
 """
-audioloc — 4-microphone sound localization
--------------------------------------------
+audioloc — 4-microphone sound localization (GCC-TDOA)
+------------------------------------------------------
 Install:
     pip install git+https://github.com/hayooka/audio_Localization_dataset.git
 
 WAV files:
     from audioloc import predict
-    angle, chunks = predict('mic_right.wav', 'mic_front.wav',
-                            'mic_left.wav',  'mic_back.wav')
+    angle, per_chunk = predict('mic_right.wav', 'mic_front.wav',
+                               'mic_left.wav',  'mic_back.wav')
 
-Real-time (live mic):
+Real-time (ReSpeaker USB — PC or Raspberry Pi):
     from audioloc import predict_realtime
     predict_realtime()
 """
@@ -20,144 +20,129 @@ import torch
 import torch.nn as nn
 from urllib.request import urlretrieve
 
-from ._features import extract_features, extract_chunk, MICS, CHUNK_SAMPLES, RATE, ALL_FEATURE_COLS
+from ._features import _load_wav, extract_chunk_tdoa, CHUNK_SAMPLES, RATE, MICS
 
-# RMS indices are always positions 0-3 in ALL_FEATURE_COLS
-_RMS_IDX = [ALL_FEATURE_COLS.index(c)
-            for c in ['rms_mic_right', 'rms_mic_front', 'rms_mic_left', 'rms_mic_back']]
+# ── Constants ──────────────────────────────────────────────────────────────────
+DEVICE_NAME = "reSpeaker"   # partial name match — same as data collection scripts
+MODEL_URL   = 'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.00/audioLOC_GCCTDOA.pt'
+MODEL_CACHE = os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC_GCCTDOA.pt')
 
-_MODELS = {
-    'all': {
-        'url':   'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.0/audioLOC.pt',
-        'cache': os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC.pt'),
-    },
-    'gcctdoa': {
-        'url':   'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.0/audioLOC_GCCTDOA.pt',
-        'cache': os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC_GCCTDOA.pt'),
-    },
-}
-
-# ── Model ─────────────────────────────────────────────────────────────────────
+# ── CNN architecture (must match training) ─────────────────────────────────────
 class _LocalizationCNN(nn.Module):
     def __init__(self, n_features, n_classes):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv1d(1, 32, kernel_size=3, padding=1),
-            nn.BatchNorm1d(32), nn.ReLU(), nn.Dropout(0.2),
+            nn.BatchNorm1d(32),  nn.ReLU(), nn.Dropout(0.2),
             nn.Conv1d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm1d(64), nn.ReLU(), nn.Dropout(0.2),
+            nn.BatchNorm1d(64),  nn.ReLU(), nn.Dropout(0.2),
             nn.Conv1d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm1d(128), nn.ReLU(), nn.Dropout(0.2),
         )
         self.fc = nn.Sequential(
             nn.Flatten(),
             nn.Linear(128 * n_features, 256), nn.BatchNorm1d(256), nn.ReLU(), nn.Dropout(0.4),
-            nn.Linear(256, 64),  nn.BatchNorm1d(64),  nn.ReLU(), nn.Dropout(0.3),
+            nn.Linear(256, 64),               nn.BatchNorm1d(64),  nn.ReLU(), nn.Dropout(0.3),
             nn.Linear(64, n_classes),
         )
     def forward(self, x):
         return self.fc(self.conv(x))
 
-# ── Model cache (one entry per model name) ────────────────────────────────────
-_states = {}   # { 'all': {...}, 'gcctdoa': {...} }
+# ── Model state (loaded once on first call) ────────────────────────────────────
+_state = {}
 
-def _load(model_name='all'):
-    if model_name not in _MODELS:
-        raise ValueError(f"Unknown model '{model_name}'. Choose from: {list(_MODELS)}")
-    cfg    = _MODELS[model_name]
+def _load():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    if not os.path.exists(cfg['cache']):
-        os.makedirs(os.path.dirname(cfg['cache']), exist_ok=True)
-        print(f'Downloading {model_name} weights...')
-        urlretrieve(cfg['url'], cfg['cache'])
-        print('Download complete.')
-    ckpt = torch.load(cfg['cache'], map_location=device, weights_only=False)
-    feature_cols = ckpt['feature_cols']
-    n_classes    = ckpt['model_state']['fc.9.bias'].shape[0]
-    model = _LocalizationCNN(n_features=len(feature_cols), n_classes=n_classes).to(device)
+    if not os.path.exists(MODEL_CACHE):
+        os.makedirs(os.path.dirname(MODEL_CACHE), exist_ok=True)
+        print('Downloading GCC-TDOA model...')
+        urlretrieve(MODEL_URL, MODEL_CACHE)
+        print('Done.')
+    ckpt      = torch.load(MODEL_CACHE, map_location=device, weights_only=False)
+    n_feat    = len(ckpt['feature_cols'])
+    n_classes = ckpt['model_state']['fc.9.bias'].shape[0]
+    model     = _LocalizationCNN(n_feat, n_classes).to(device)
     model.load_state_dict(ckpt['model_state'])
     model.eval()
-    col_idx = [ALL_FEATURE_COLS.index(c) for c in feature_cols]
-    _states[model_name] = dict(
-        model        = model,
-        scaler_mean  = ckpt['scaler_mean'],
-        scaler_std   = ckpt['scaler_std'],
-        col_idx      = col_idx,
-        angles       = list(range(0, 360, 360 // n_classes)),
-        device       = device,
+    _state.update(
+        model  = model,
+        mean   = ckpt['scaler_mean'],
+        std    = ckpt['scaler_std'],
+        angles = list(range(0, 360, 360 // n_classes)),
+        device = device,
     )
 
-def _infer(X, model_name):
-    """Select model features, normalize, run inference. X is full 899-feature array."""
-    st          = _states[model_name]
-    model       = st['model']
-    scaler_mean = st['scaler_mean']
-    scaler_std  = st['scaler_std']
-    col_idx     = st['col_idx']
-    angles      = st['angles']
-    device      = st['device']
-    X_sel  = X[:, col_idx]
-    X_norm = (X_sel - scaler_mean) / (scaler_std + 1e-10)
-    X_t    = torch.tensor(X_norm).float().unsqueeze(1).to(device)
+# ── Inference ──────────────────────────────────────────────────────────────────
+def _infer(X):
+    """X: (N, 606) GCC-TDOA features → (angle_list, pred_indices, confidences)."""
+    X_norm = (X - _state['mean']) / (_state['std'] + 1e-10)
+    X_t    = torch.tensor(X_norm).float().unsqueeze(1).to(_state['device'])
     with torch.no_grad():
-        preds = model(X_t).argmax(1).cpu().numpy()
-    return [angles[p] for p in preds], preds
+        probs = torch.softmax(_state['model'](X_t), dim=1).cpu().numpy()
+    preds = probs.argmax(1)
+    confs = probs[range(len(preds)), preds]
+    return [_state['angles'][p] for p in preds], preds, confs
 
-# ── 1. WAV file prediction ─────────────────────────────────────────────────────
+# ── ReSpeaker auto-detection (same logic as data collection scripts) ────────────
+def _find_respeaker(sd):
+    for i, dev in enumerate(sd.query_devices()):
+        if DEVICE_NAME.lower() in str(dev['name']).lower() and dev['max_input_channels'] >= 6:
+            return i
+    return None
+
+# ── 1. WAV prediction ──────────────────────────────────────────────────────────
 def predict(path_right, path_front, path_left, path_back,
-            rms_threshold=100.0, max_seconds=5, model='gcctdoa'):
+            rms_threshold=100.0, max_seconds=5):
     """
-    Predict sound direction from 4 pre-recorded WAV files (16 kHz, mono).
-
-    Parameters
-    ----------
-    path_right / path_front / path_left / path_back : str
-        Path to each mic's WAV file.
-    rms_threshold : float
-        Chunks below this RMS on any mic are skipped (silence removal).
-    max_seconds : float or None
-        Only process this many seconds from the start (default 5).
-        Pass None to process the entire file.
-    model : str
-        Which model to use: 'all' (default, all features) or 'gcctdoa'.
+    Predict direction from 4 pre-recorded WAV files (16 kHz mono).
 
     Returns
     -------
-    angle : int
-        Majority-vote direction in degrees (0, 15, 30, ..., 345).
-    per_chunk : list[int]
-        Per-chunk angle predictions.
+    majority_angle : int   — degrees (0, 15, 30, ..., 345)
+    per_chunk      : list  — per-30ms-chunk predictions
     """
-    if model not in _states:
-        _load(model)
+    if not _state:
+        _load()
 
-    X = extract_features(path_right, path_front, path_left, path_back,
-                         max_seconds=max_seconds)
+    signals = {
+        'mic_right': _load_wav(path_right),
+        'mic_front': _load_wav(path_front),
+        'mic_left':  _load_wav(path_left),
+        'mic_back':  _load_wav(path_back),
+    }
+    n_chunks = min(len(s) for s in signals.values()) // CHUNK_SAMPLES
+    if max_seconds is not None:
+        n_chunks = min(n_chunks, int(max_seconds * RATE / CHUNK_SAMPLES))
 
-    mask = (X[:, _RMS_IDX] >= rms_threshold).all(axis=1)
-    X = X[mask]
-    if len(X) == 0:
+    rms_list, feat_list = [], []
+    for ci in range(n_chunks):
+        s  = ci * CHUNK_SAMPLES
+        ch = {m: signals[m][s:s + CHUNK_SAMPLES] for m in MICS}
+        rms, feat = extract_chunk_tdoa(ch)
+        rms_list.append(rms)
+        feat_list.append(feat)
+
+    if not feat_list:
         return 0, []
 
-    per_chunk, preds = _infer(X, model)
-    angles  = _states[model]['angles']
+    rms_arr  = np.stack(rms_list)
+    feat_arr = np.stack(feat_list)
+    feat_arr = feat_arr[(rms_arr >= rms_threshold).all(axis=1)]
+
+    if len(feat_arr) == 0:
+        return 0, []
+
+    per_chunk, preds, _ = _infer(feat_arr)
+    angles   = _state['angles']
     majority = angles[int(np.argmax(np.bincount(preds, minlength=len(angles))))]
     return majority, per_chunk
 
-
 # ── 2. Real-time prediction ────────────────────────────────────────────────────
-def predict_realtime(device=None, rms_threshold=100.0):
+def predict_realtime(rms_threshold=100.0):
     """
-    Predict sound direction live from a 4-channel microphone (e.g. ReSpeaker).
-    Prints the predicted angle every 30ms. Press Ctrl+C to stop.
-
-    Parameters
-    ----------
-    device : int or str or None
-        sounddevice input device. None = system default.
-        Run `python -m sounddevice` to list available devices.
-    rms_threshold : float
-        Chunks below this RMS on any channel are shown as '---' (silence).
+    Predict live from ReSpeaker USB mic array.
+    Auto-detects device by name — works on PC and Raspberry Pi.
+    Press Ctrl+C to stop.
     """
     try:
         import sounddevice as sd
@@ -167,26 +152,30 @@ def predict_realtime(device=None, rms_threshold=100.0):
             "Install it with:  pip install sounddevice"
         )
 
+    device_index = _find_respeaker(sd)
+    if device_index is None:
+        raise RuntimeError(
+            "ReSpeaker not found. Make sure it is plugged in.\n"
+            "Run `python -m sounddevice` to list available devices."
+        )
+    print(f"Found ReSpeaker at device index {device_index}")
+
     if not _state:
         _load()
 
-    angles      = _state['angles']
-    feature_cols = _state['feature_cols']
-    rms_names   = ['rms_mic_right', 'rms_mic_front', 'rms_mic_left', 'rms_mic_back']
-    rms_idx     = [feature_cols.index(c) for c in rms_names]
-
-    print("Listening... Press Ctrl+C to stop.\n")
+    print("Listening (GCC-TDOA)... Press Ctrl+C to stop.\n")
     print(f"{'Angle':>8}  {'Confidence':>10}")
     print("-" * 22)
 
     try:
-        with sd.InputStream(device=device, channels=6,
+        with sd.InputStream(device=device_index, channels=6,
                             samplerate=RATE, blocksize=CHUNK_SAMPLES,
                             dtype='int16') as stream:
             while True:
-                block, _ = stream.read(CHUNK_SAMPLES)   # shape: (CHUNK_SAMPLES, 6)
-                block = block.astype('float32')          # ch 0-1 unused (ReSpeaker raw)
+                block, _ = stream.read(CHUNK_SAMPLES)
+                block = block.astype('float32')
 
+                # ReSpeaker USB: mics are on channels 2-5
                 ch = {
                     'mic_right': block[:, 2],
                     'mic_front': block[:, 3],
@@ -194,23 +183,14 @@ def predict_realtime(device=None, rms_threshold=100.0):
                     'mic_back':  block[:, 5],
                 }
 
-                feat = extract_chunk(ch).reshape(1, -1)
+                rms, feat = extract_chunk_tdoa(ch)
 
-                # silence check
-                rms_vals = feat[0, rms_idx]
-                if (rms_vals < rms_threshold).any():
+                if (rms < rms_threshold).any():
                     print(f"{'---':>8}  (silence)")
                     continue
 
-                per_chunk, preds = _infer(feat)
-                angle = per_chunk[0]
-                # confidence: softmax probability of top class
-                X_norm = (feat - _state['scaler_mean']) / (_state['scaler_std'] + 1e-10)
-                X_t    = torch.tensor(X_norm).float().unsqueeze(1).to(_state['device'])
-                with torch.no_grad():
-                    probs = torch.softmax(_state['model'](X_t), dim=1).cpu().numpy()[0]
-                conf = probs[preds[0]]
-                print(f"{angle:>7}°  {conf*100:>9.1f}%")
+                per_chunk, _, confs = _infer(feat.reshape(1, -1))
+                print(f"{per_chunk[0]:>7}°  {confs[0]*100:>9.1f}%")
 
     except KeyboardInterrupt:
         print("\nStopped.")

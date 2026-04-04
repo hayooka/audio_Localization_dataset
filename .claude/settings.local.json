@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/Users/ahmma/anaconda3/envs/audio_env/python -c \"from audioloc import predict; print\\('OK:', predict.__doc__.strip\\(\\).split\\(chr\\(10\\)\\)[0]\\)\")",
+      "Bash(/c/Users/ahmma/anaconda3/envs/audio_env/python -m pip install -e \"c:/Users/ahmma/Desktop/farah/audio_Localization_dataset\" -q)"
+    ]
+  }
+}
