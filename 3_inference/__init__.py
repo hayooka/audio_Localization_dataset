@@ -32,7 +32,7 @@ _MODELS = {
         'cache': os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC.pt'),
     },
     'gcctdoa': {
-        'url':   'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.00/audioLOC_GCCTDOA.pt',
+        'url':   'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.0/audioLOC_GCCTDOA.pt',
         'cache': os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC_GCCTDOA.pt'),
     },
 }
@@ -105,7 +105,7 @@ def _infer(X, model_name):
 
 # ── 1. WAV file prediction ─────────────────────────────────────────────────────
 def predict(path_right, path_front, path_left, path_back,
-            rms_threshold=100.0, max_seconds=5, model='all'):
+            rms_threshold=100.0, max_seconds=5, model='gcctdoa'):
     """
     Predict sound direction from 4 pre-recorded WAV files (16 kHz, mono).
 
