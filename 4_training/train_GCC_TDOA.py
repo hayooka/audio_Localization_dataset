@@ -189,7 +189,7 @@ print(f'\nTrain (80%): {len(X_tr80)}  Val (20%): {len(X_val20)}  Test: {len(X_te
 
 # ── Run experiments ───────────────────────────────────────────────────────────
 experiments = [
-    ('S1: 80% train -> 20% train', X_tr80, y_tr80, X_val20, y_val20, X_rms80),
+    #('S1: 80% train -> 20% train', X_tr80, y_tr80, X_val20, y_val20, X_rms80),
     ('S2: 80% train -> test',      X_tr80, y_tr80, X_te,    y_te,    X_rms80)
 ]
 
@@ -205,7 +205,7 @@ for name, Xtr, ytr, Xte, yte, Xrms in experiments:
 
     # Save S2 model (trained on 80% of train, evaluated on real test set)
     if name == 'S2: 80% train -> test':
-        save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audioLOC.pt')
+        save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audioLOC_GCCTDOA.pt')
         torch.save({
             'model_state':  model.state_dict(),
             'scaler_mean':  scaler.mean_,

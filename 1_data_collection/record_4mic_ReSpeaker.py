@@ -10,7 +10,7 @@ import time
 # ========================
 # SETTINGS
 # ========================
-DEVICE_INDEX = 25
+DEVICE_NAME = "reSpeaker"    # partial match — works for XVF3800 and similar
 CHANNELS = 6
 RATE = 16000
 DURATION = 0.02          # 20ms (same as FRAME_MS)
@@ -22,19 +22,30 @@ NUM_FILTERS = 20
 RECORD_MINUTES = 7       # total recording duration per position
 TOTAL_FRAMES = int((RECORD_MINUTES * 60) / DURATION)
 
-VALID_POSITIONS = [0, 45, 90, 135, 180, 225, 270, 315]
+ANGLES = [0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165,
+          180, 195, 210, 225, 240, 255, 270, 285, 300, 315, 330, 345]
 OUTPUT_BASE = "raw"
 
 # ========================
 # *** CHANGE THIS BEFORE EACH RECORDING SESSION ***
 # ========================
-POSITION = 0   # choose from: 0, 45, 90, 135, 180, 225, 270, 315
+POSITION = 0   # choose from ANGLES list above
 
 # ========================
-# VALIDATE POSITION
+# AUTO-DETECT RESPEAKER
 # ========================
-if POSITION not in VALID_POSITIONS:
-    raise ValueError(f"Invalid position {POSITION}. Choose from: {VALID_POSITIONS}")
+device_index = None
+for i, dev in enumerate(sd.query_devices()):
+    if DEVICE_NAME.lower() in dev['name'].lower() and dev['max_input_channels'] >= CHANNELS:
+        device_index = i
+        print(f"Found '{dev['name']}' at index {device_index}")
+        break
+
+if device_index is None:
+    raise RuntimeError(f"ReSpeaker not found. Run `python -m sounddevice` to list devices.")
+
+if POSITION not in ANGLES:
+    raise ValueError(f"Invalid position {POSITION}. Choose from: {ANGLES}")
 
 POS_NAME = f"position_{POSITION:03d}deg"
 OUT_DIR  = os.path.join(OUTPUT_BASE, POS_NAME)
@@ -98,7 +109,7 @@ print("\n🔴 Recording...\n")
 try:
     while frame_idx < TOTAL_FRAMES:
         audio = sd.rec(int(DURATION * RATE), samplerate=RATE,
-                       channels=CHANNELS, dtype='int16', device=DEVICE_INDEX)
+                       channels=CHANNELS, dtype='int16', device=device_index)
         sd.wait()
 
         right = audio[:, 2].astype(np.float32)
