@@ -1,6 +1,6 @@
 """
-audioloc — 4-microphone sound localization (GCC-TDOA)
-------------------------------------------------------
+audioloc — 4-microphone sound localization (ALL features)
+----------------------------------------------------------
 Install:
     pip install git+https://github.com/hayooka/audio_Localization_dataset.git
 
@@ -20,12 +20,13 @@ import torch
 import torch.nn as nn
 from urllib.request import urlretrieve
 
-from ._features import _load_wav, extract_chunk_tdoa, CHUNK_SAMPLES, RATE, MICS
+from ._features import _load_wav, extract_chunk_all, CHUNK_SAMPLES, RATE, MICS
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 DEVICE_NAME = "reSpeaker"   # partial name match — same as data collection scripts
-MODEL_URL   = 'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.00/audioLOC_GCCTDOA.pt'
-MODEL_CACHE = os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC_GCCTDOA.pt')
+MODEL_URL   = 'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.00/audioLOC_ALL.pt'
+MODEL_CACHE = os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC_ALL.pt')
+MODEL_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '4_training', 'audioLOC.pt')
 
 # ── CNN architecture (must match training) ─────────────────────────────────────
 class _LocalizationCNN(nn.Module):
@@ -53,12 +54,19 @@ _state = {}
 
 def _load():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    if not os.path.exists(MODEL_CACHE):
-        os.makedirs(os.path.dirname(MODEL_CACHE), exist_ok=True)
-        print('Downloading GCC-TDOA model...')
-        urlretrieve(MODEL_URL, MODEL_CACHE)
-        print('Done.')
-    ckpt      = torch.load(MODEL_CACHE, map_location=device, weights_only=False)
+
+    # prefer local trained file, fall back to cached download
+    if os.path.exists(MODEL_LOCAL):
+        ckpt_path = MODEL_LOCAL
+    else:
+        ckpt_path = MODEL_CACHE
+        if not os.path.exists(ckpt_path):
+            os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+            print('Downloading ALL-features model...')
+            urlretrieve(MODEL_URL, ckpt_path)
+            print('Done.')
+
+    ckpt      = torch.load(ckpt_path, map_location=device, weights_only=False)
     n_feat    = len(ckpt['feature_cols'])
     n_classes = ckpt['model_state']['fc.9.bias'].shape[0]
     model     = _LocalizationCNN(n_feat, n_classes).to(device)
@@ -74,7 +82,7 @@ def _load():
 
 # ── Inference ──────────────────────────────────────────────────────────────────
 def _infer(X):
-    """X: (N, 606) GCC-TDOA features → (angle_list, pred_indices, confidences)."""
+    """X: all features."""
     X_norm = (X - _state['mean']) / (_state['std'] + 1e-10)
     X_t    = torch.tensor(X_norm).float().unsqueeze(1).to(_state['device'])
     with torch.no_grad():
@@ -118,7 +126,7 @@ def predict(path_right, path_front, path_left, path_back,
     for ci in range(n_chunks):
         s  = ci * CHUNK_SAMPLES
         ch = {m: signals[m][s:s + CHUNK_SAMPLES] for m in MICS}
-        rms, feat = extract_chunk_tdoa(ch)
+        rms, feat = extract_chunk_all(ch)
         rms_list.append(rms)
         feat_list.append(feat)
 
@@ -163,7 +171,7 @@ def predict_realtime(rms_threshold=100.0):
     if not _state:
         _load()
 
-    print("Listening (GCC-TDOA)... Press Ctrl+C to stop.\n")
+    print("Listening (ALL features)... Press Ctrl+C to stop.\n")
     print(f"{'Angle':>8}  {'Confidence':>10}")
     print("-" * 22)
 
@@ -183,7 +191,7 @@ def predict_realtime(rms_threshold=100.0):
                     'mic_back':  block[:, 5],
                 }
 
-                rms, feat = extract_chunk_tdoa(ch)
+                rms, feat = extract_chunk_all(ch)
 
                 if (rms < rms_threshold).any():
                     print(f"{'---':>8}  (silence)")

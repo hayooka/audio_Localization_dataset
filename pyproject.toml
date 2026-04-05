@@ -11,10 +11,8 @@ dependencies = [
     "torch",
     "numpy",
     "scipy",
+    "sounddevice",
 ]
-
-[project.optional-dependencies]
-realtime = ["sounddevice"]
 
 [tool.setuptools]
 packages = ["audioloc"]

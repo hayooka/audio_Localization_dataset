@@ -30,7 +30,7 @@ from audioloc import predict_realtime
 predict_realtime(device=25)        # device index from your system
 ```
 
-> First call downloads the pretrained weights (~113 MB) once to `~/.audioloc/`.
+> First call downloads the pretrained ALL-features weights once to `~/.audioloc/`.
 > **Requires:** Python ≥ 3.8, PyTorch, NumPy, SciPy
 
 ---
@@ -39,27 +39,25 @@ predict_realtime(device=25)        # device index from your system
 
 ```
 audio_Localization_dataset/
-├── 1_data_to_features/
+├── 1_data_collection/
+│   ├── record_4mic_ReSpeaker.py  ← 4-mic recorder (6-ch ReSpeaker, ch 2–5)
+│   └── record_2mic_old.py        ← older 2-mic recorder
+├── 2_data_to_features/
 │   ├── features_to_csv.py        ← WAV → features → CSV (30ms chunks)
 │   └── 6_plot.py                 ← feature separability analysis & plots
-├── 2_training/
+├── 3_inference/                  ← installable audioloc package
+│   ├── __init__.py               ← predict() + predict_realtime()
+│   └── _features.py              ← feature extraction from WAV / live audio
+├── 4_training/
 │   ├── data_processing.py        ← augmentation, early stopping
-│   ├── train_ALL_features.py     ← CNN on all features  ← main model
+│   ├── train_ALL_features.py     ← CNN on all 895 features  ← main model
 │   ├── train_IPD.py              ← CNN on IPD only
 │   ├── train_GCC_TDOA.py         ← CNN on GCC-TDOA only
 │   ├── train_GCC_Strength.py     ← CNN on GCC strength only
 │   ├── train_LogMel.py           ← CNN on log-mel only
 │   ├── train_RMS.py              ← CNN on RMS only
-│   └── audioLOC.pt               ← pretrained weights (S2 model)
-├── 3_inference/                  ← installable audioloc package
-│   ├── __init__.py               ← predict() + predict_realtime()
-│   └── _features.py              ← feature extraction from WAV / live audio
-├── 4_data_collection/
-│   ├── record_4mic_ReSpeaker.py  ← 4-mic recorder (6-ch ReSpeaker, ch 2–5)
-│   └── record_2mic_old.py        ← older 2-mic recorder
-├── notebooks/
-│   └── analyze_features.ipynb    ← RMS distribution, silence, separability
-├── Results/                      ← plots & summaries per feature set
+│   └── audioLOC.pt               ← pretrained weights (ALL features, S2)
+├── results/                      ← plots & summaries per feature set
 └── pyproject.toml                ← pip package config
 ```
 
@@ -67,11 +65,10 @@ audio_Localization_dataset/
 
 ## Pipeline
 
-1. **Record** → `4_data_collection/record_4mic_ReSpeaker.py` — 5 min + 3 min WAV per angle
-2. **Extract** → `1_data_to_features/features_to_csv.py` — 30ms chunks → 899 features → CSV
-3. **Analyse** → `notebooks/analyze_features.ipynb` — inspect silence, feature separability
-4. **Train** → `2_training/train_ALL_features.py` — 1D CNN, 24-class, saves `audioLOC.pt`
-5. **Use** → `from audioloc import predict` or `predict_realtime()`
+1. **Record** → `1_data_collection/record_4mic_ReSpeaker.py` — 5 min + 3 min WAV per angle
+2. **Extract** → `2_data_to_features/features_to_csv.py` — 30ms chunks → 895 features → CSV
+3. **Train** → `4_training/train_ALL_features.py` — 1D CNN, 24-class, saves `audioLOC.pt`
+4. **Use** → `from audioloc import predict` or `predict_realtime()`
 
 ---
 
@@ -79,14 +76,13 @@ audio_Localization_dataset/
 
 | Feature | Dims | Description |
 |---|---|---|
-| RMS | 4 | Energy per mic |
 | IPD | 3 | Hilbert phase difference (3 mic pairs) |
 | IPD-mel | 120 | Phase difference weighted over 40 mel bands |
 | GCC-PHAT TDOA | 6 | Cross-correlation peak delay (ms), 6 pairs |
 | GCC Strength | 6 | Correlation peak sharpness, 6 pairs |
 | GCC vector | 600 | Full 100-sample GCC curve, 6 pairs |
 | Log-mel | 160 | 40 mel bands × 4 mics |
-| **Total** | **899** | |
+| **Total** | **895** | |
 
 ---
 

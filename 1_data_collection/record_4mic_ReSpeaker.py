@@ -2,7 +2,6 @@ import sounddevice as sd
 import numpy as np
 import wave
 import os
-import webrtcvad
 from gammatone.gtgram import gtgram
 from datetime import datetime
 import time
@@ -90,11 +89,6 @@ vad_log_path  = os.path.join(OUT_DIR, "vad_log.txt")
 vad_log_lines = ["frame_index,vad_active,gammatone_energy"]
 
 # ========================
-# VAD
-# ========================
-vad = webrtcvad.Vad(2)
-
-# ========================
 # COUNTERS
 # ========================
 frame_idx     = 0
@@ -122,26 +116,6 @@ try:
         left_int16  = left.astype(np.int16)
         back_int16  = back.astype(np.int16)
 
-        try:
-            vad_active = vad.is_speech(front_int16.tobytes(), RATE)
-        except Exception:
-            vad_active = False
-
-        if vad_active:
-            speech_frames += 1
-
-        front_norm = front / (np.max(np.abs(front)) + 1e-9)
-        gt = gtgram(front_norm, RATE, DURATION, DURATION, NUM_FILTERS, 50)
-        gammatone_energy = float(np.mean(gt))
-
-        wav_right.writeframes(right_int16.tobytes())
-        wav_front.writeframes(front_int16.tobytes())
-        wav_left.writeframes(left_int16.tobytes())
-        wav_back.writeframes(back_int16.tobytes())
-
-        vad_log_lines.append(f"{frame_idx},{int(vad_active)},{gammatone_energy:.6f}")
-
-        frame_idx += 1
 
         if frame_idx % (30 * 1000 // FRAME_MS) == 0:
             elapsed    = (datetime.now() - start_time).seconds
