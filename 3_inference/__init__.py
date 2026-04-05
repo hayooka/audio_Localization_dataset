@@ -24,7 +24,7 @@ from ._features import _load_wav, extract_chunk_all, CHUNK_SAMPLES, RATE, MICS
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 DEVICE_NAME = "reSpeaker"   # partial name match — same as data collection scripts
-MODEL_URL   = 'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.00/audioLOC_ALL.pt'
+MODEL_URL   = 'https://github.com/hayooka/audio_Localization_dataset/releases/download/v1.01/audioLOC_ALL.pt'
 MODEL_CACHE = os.path.join(os.path.expanduser('~'), '.audioloc', 'audioLOC_ALL.pt')
 MODEL_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '4_training', 'audioLOC.pt')
 
