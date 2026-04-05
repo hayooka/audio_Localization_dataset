@@ -20,7 +20,7 @@ from data_processing import augment_all, EarlyStopping
 
 # ── Config ────────────────────────────────────────────────────────────────────
 FEATURES_DIR = r'C:\Users\ahmma\Desktop\farah\features'
-CHUNK_TAG    = '30'   # e.g. '30', '50', '80' — matches train_DATA{tag}.csv
+CHUNK_TAG    = '50'   # e.g. '30', '50', '80' — matches train_DATA{tag}.csv
 EPOCHS       = 50
 BATCH_SIZE   = 64
 LR           = 1e-3
@@ -84,11 +84,11 @@ class LocalizationCNN(nn.Module):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def prepare(X_tr_raw, y_tr_raw, X_te_raw, y_te_raw, X_rms=None):
     ## augment train only: original + noise + gain + time-shift copies
-    X_tr_aug = augment_all(X_tr_raw.astype(np.float32), _LOGMEL_IDX, X_rms)
-    y_tr_aug = np.tile(y_tr_raw, 4).astype(np.int64)
-    print(f'  Augmented train: {len(X_tr_raw)} → {len(X_tr_aug)} samples')
-    #X_tr_aug = X_tr_raw.astype(np.float32)
-    #y_tr_aug = y_tr_raw.astype(np.int64)
+    #X_tr_aug = augment_all(X_tr_raw.astype(np.float32), _LOGMEL_IDX, X_rms)
+    #y_tr_aug = np.tile(y_tr_raw, 4).astype(np.int64)
+    #print(f'  Augmented train: {len(X_tr_raw)} → {len(X_tr_aug)} samples')
+    X_tr_aug = X_tr_raw.astype(np.float32)
+    y_tr_aug = y_tr_raw.astype(np.int64)
 
     scaler = StandardScaler()
     X_tr = scaler.fit_transform(X_tr_aug)
