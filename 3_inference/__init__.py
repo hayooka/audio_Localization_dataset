@@ -146,10 +146,10 @@ def predict(path_right, path_front, path_left, path_back,
     return majority, per_chunk
 
 # ── 2. Real-time prediction ────────────────────────────────────────────────────
-def predict_realtime(rms_threshold=100.0):
+def predict_realtime(rms_threshold=100.0, device_index=None):
     """
     Predict live from ReSpeaker USB mic array.
-    Auto-detects device by name — works on PC and Raspberry Pi.
+    Auto-detects device by name, or pass device_index explicitly.
     Press Ctrl+C to stop.
     """
     try:
@@ -160,13 +160,14 @@ def predict_realtime(rms_threshold=100.0):
             "Install it with:  pip install sounddevice"
         )
 
-    device_index = _find_respeaker(sd)
     if device_index is None:
-        raise RuntimeError(
-            "ReSpeaker not found. Make sure it is plugged in.\n"
-            "Run `python -m sounddevice` to list available devices."
-        )
-    print(f"Found ReSpeaker at device index {device_index}")
+        device_index = _find_respeaker(sd)
+        if device_index is None:
+            raise RuntimeError(
+                "ReSpeaker not found. Make sure it is plugged in.\n"
+                "Run `python -m sounddevice` to list available devices."
+            )
+    print(f"Using device index {device_index}")
 
     if not _state:
         _load()
@@ -176,29 +177,28 @@ def predict_realtime(rms_threshold=100.0):
     print("-" * 22)
 
     try:
-        with sd.InputStream(device=device_index, channels=6,
-                            samplerate=RATE, blocksize=CHUNK_SAMPLES,
-                            dtype='int16') as stream:
-            while True:
-                block, _ = stream.read(CHUNK_SAMPLES)
-                block = block.astype('float32')
+        while True:
+            block = sd.rec(CHUNK_SAMPLES, samplerate=RATE, channels=6,
+                           dtype='int16', device=device_index)
+            sd.wait()
+            block = block.astype('float32')
 
-                # ReSpeaker USB: mics are on channels 2-5
-                ch = {
-                    'mic_right': block[:, 2],
-                    'mic_front': block[:, 3],
-                    'mic_left':  block[:, 4],
-                    'mic_back':  block[:, 5],
-                }
+            # ReSpeaker USB: mics are on channels 2-5
+            ch = {
+                'mic_right': block[:, 2],
+                'mic_front': block[:, 3],
+                'mic_left':  block[:, 4],
+                'mic_back':  block[:, 5],
+            }
 
-                rms, feat = extract_chunk_all(ch)
+            rms, feat = extract_chunk_all(ch)
 
-                if (rms < rms_threshold).any():
-                    print(f"{'---':>8}  (silence)")
-                    continue
+            if (rms < rms_threshold).any():
+                print(f"{'---':>8}  (silence)")
+                continue
 
-                per_chunk, _, confs = _infer(feat.reshape(1, -1))
-                print(f"{per_chunk[0]:>7}°  {confs[0]*100:>9.1f}%")
+            per_chunk, _, confs = _infer(feat.reshape(1, -1))
+            print(f"{per_chunk[0]:>7}°  {confs[0]*100:>9.1f}%")
 
     except KeyboardInterrupt:
         print("\nStopped.")
