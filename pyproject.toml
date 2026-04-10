@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "audioloc"
-version = "1.0.0"
+version = "1.1.0"
 description = "4-microphone sound localization CNN — predicts direction of arrival in 15° steps"
 requires-python = ">=3.8"
 dependencies = [
