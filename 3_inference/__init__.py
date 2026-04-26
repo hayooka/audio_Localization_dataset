@@ -49,8 +49,39 @@ class _LocalizationCNN(nn.Module):
     def forward(self, x):
         return self.fc(self.conv(x))
 
+# ── GRU architecture (must match sequence_audio_train.py) ─────────────────────
+class _SequenceGRU(nn.Module):
+    def __init__(self, n_features, n_classes, embed_dim=256, hidden_dim=128, num_layers=1, dropout=0.2):
+        super().__init__()
+        self.embed = nn.Sequential(
+            nn.Linear(n_features, embed_dim),
+            nn.LayerNorm(embed_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+        )
+        self.gru = nn.GRU(embed_dim, hidden_dim, num_layers=num_layers,
+                          batch_first=True,
+                          dropout=dropout if num_layers > 1 else 0.0)
+        self.classifier = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, n_classes),
+        )
+
+    def forward(self, x):
+        x = self.embed(x)
+        out, _ = self.gru(x)
+        return self.classifier(out[:, -1, :])
+
+# ── GRU checkpoint path ────────────────────────────────────────────────────────
+GRU_MODEL_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), '..', 'models', 'sequence',
+    'audioLOC_sequence_16ms_seq_gru.pt'
+)
+
 # ── Model state (loaded once on first call) ────────────────────────────────────
-_state = {}
+_state     = {}
+_gru_state = {}
 
 def _load():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -107,7 +138,7 @@ def predict(path_right, path_front, path_left, path_back,
     Returns
     -------
     majority_angle : int   — degrees (0, 15, 30, ..., 345)
-    per_chunk      : list  — per-30ms-chunk predictions
+    per_chunk      : list  — per-50ms-chunk predictions
     """
     if not _state:
         _load()
@@ -199,6 +230,114 @@ def predict_realtime(rms_threshold=100.0, device_index=None):
 
             per_chunk, _, confs = _infer(feat.reshape(1, -1))
             print(f"{per_chunk[0]:>7}°  {confs[0]*100:>9.1f}%")
+
+    except KeyboardInterrupt:
+        print("\nStopped.")
+
+# ── GRU load ───────────────────────────────────────────────────────────────────
+def _load_gru():
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    ckpt   = torch.load(GRU_MODEL_PATH, map_location=device, weights_only=False)
+
+    cfg       = ckpt['config']
+    n_feat    = len(ckpt['feature_cols'])
+    n_classes = len(list(range(0, 360, 15)))
+    model = _SequenceGRU(
+        n_features = n_feat,
+        n_classes  = n_classes,
+        embed_dim  = cfg['embed_dim'],
+        hidden_dim = cfg['hidden_dim'],
+        num_layers = cfg['layers'],
+        dropout    = cfg['dropout'],
+    ).to(device)
+    model.load_state_dict(ckpt['model_state'])
+    model.eval()
+
+    _gru_state.update(
+        model   = model,
+        mean    = ckpt['scaler_mean'],
+        std     = ckpt['scaler_std'],
+        seq_len = cfg['seq_len'],
+        angles  = list(range(0, 360, 15)),
+        device  = device,
+    )
+    print(f"GRU loaded  seq_len={cfg['seq_len']}  embed={cfg['embed_dim']}  hidden={cfg['hidden_dim']}")
+
+# ── 3. Real-time GRU prediction ────────────────────────────────────────────────
+def predict_realtime_gru(rms_threshold=100.0, device_index=None):
+    """
+    Real-time localization using the trained SequenceGRU model.
+    Keeps a rolling buffer of seq_len frames; outputs a prediction every chunk.
+    Press Ctrl+C to stop.
+    """
+    try:
+        import sounddevice as sd
+    except ImportError:
+        raise ImportError("Install sounddevice:  pip install sounddevice")
+
+    if device_index is None:
+        device_index = _find_respeaker(sd)
+        if device_index is None:
+            raise RuntimeError("ReSpeaker not found.")
+    print(f"Using device index {device_index}")
+
+    if not _gru_state:
+        _load_gru()
+
+    seq_len = _gru_state['seq_len']
+    angles  = _gru_state['angles']
+    mean    = _gru_state['mean']
+    std     = _gru_state['std']
+    model   = _gru_state['model']
+    dev     = _gru_state['device']
+
+    # rolling buffer: seq_len × n_features  (filled with zeros until warm)
+    n_feat = len(mean)
+    buffer = np.zeros((seq_len, n_feat), dtype=np.float32)
+
+    print(f"Listening (GRU  seq={seq_len} frames = {seq_len*CHUNK_SAMPLES/RATE*1000:.0f}ms)... Ctrl+C to stop.\n")
+    print(f"{'Angle':>8}  {'Confidence':>10}  {'Status':>8}")
+    print("-" * 32)
+
+    filled = 0   # counts frames until buffer is warm
+
+    try:
+        while True:
+            block = sd.rec(CHUNK_SAMPLES, samplerate=RATE, channels=6,
+                           dtype='int16', device=device_index)
+            sd.wait()
+            block = block.astype('float32')
+
+            ch = {
+                'mic_right': block[:, 2],
+                'mic_front': block[:, 3],
+                'mic_left':  block[:, 4],
+                'mic_back':  block[:, 5],
+            }
+
+            rms, feat = extract_chunk_all(ch)
+
+            # always roll buffer so GRU sees context even across silence
+            buffer = np.roll(buffer, -1, axis=0)
+            buffer[-1] = feat
+            filled = min(filled + 1, seq_len)
+
+            if (rms < rms_threshold).any():
+                print(f"{'---':>8}  {'':>10}  (silence)")
+                continue
+
+            if filled < seq_len:
+                print(f"{'---':>8}  {'':>10}  warming {filled}/{seq_len}")
+                continue
+
+            # normalise and run GRU on the full sequence
+            seq_norm = (buffer - mean) / (std + 1e-10)
+            X_t = torch.tensor(seq_norm).float().unsqueeze(0).to(dev)  # (1, seq_len, n_feat)
+            with torch.no_grad():
+                probs = torch.softmax(model(X_t), dim=1).cpu().numpy()[0]
+            pred_idx = int(probs.argmax())
+            conf     = probs[pred_idx] * 100
+            print(f"{angles[pred_idx]:>7}°  {conf:>9.1f}%")
 
     except KeyboardInterrupt:
         print("\nStopped.")

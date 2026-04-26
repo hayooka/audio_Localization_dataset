@@ -3,12 +3,12 @@ import wave
 from scipy.signal import hilbert
 
 RATE          = 16000
-CHUNK_SEC     = 0.05
-CHUNK_SAMPLES = int(CHUNK_SEC * RATE)   # 480 samples per 30ms chunk
+CHUNK_SEC     = 0.016
+CHUNK_SAMPLES = int(CHUNK_SEC * RATE)   # 256 samples per 16ms chunk
 GCC_VEC_SIZE  = 100
 N_PAIRS       = 6
 N_MELS        = 40
-N_FFT         = 1024
+N_FFT         = 512
 MICS          = ['mic_right', 'mic_front', 'mic_left', 'mic_back']
 
 # ── Mel filterbank (built once) ────────────────────────────────────────────────

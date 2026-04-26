@@ -28,14 +28,15 @@ from scipy.fftpack import dct
 DATASETS = {
     'DATA': r'C:\Users\ahmma\Desktop\farah\(24 angles)dataset',
 }
-OUTPUT_DIR = r'C:\Users\ahmma\Desktop\farah\features'
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUTPUT_DIR = os.path.join(REPO_ROOT, 'features')
 
 ANGLES = list(range(0, 360, 15))
 MICS      = ['mic_right', 'mic_front', 'mic_left', 'mic_back']
 RATE      = 16000
-CHUNK_SEC = 0.05  # 50ms = 800 samples at 16kHz
+CHUNK_SEC = 0.016  # 16ms = 256 samples at 16kHz (matches XVF3800 beamformer cadence)
 N_MELS    = 40
-N_FFT     = 1024  # next power of 2 >= 800
+N_FFT     = 512   # next power of 2 >= 256
 
 
 POSITION_TO_LABEL = {angle: i for i, angle in enumerate(ANGLES)}
