@@ -7,7 +7,8 @@ Architecture:
   [capture thread] — one PyAudio stream from ReSpeaker
        │
        ├──► gru_queue    ──► [GRU thread]     angle / confidence  (every 16ms)
-       └──► yamnet_queue ──► [YAMNet thread]  sound label / scores (every ~1s)
+       ├──► yamnet_queue ──► [YAMNet thread]  sound label / scores (every ~1s)
+       └──► stt_queue    ──► [STT thread]     transcript (1.2s chunks, 0.3s overlap)
 
 Both inference threads run truly in parallel from the same audio stream.
 
@@ -126,6 +127,7 @@ def find_respeaker(p: pyaudio.PyAudio):
 # maxsize keeps memory bounded if an inference thread falls behind.
 _gru_q    = queue.Queue(maxsize=50)
 _yamnet_q = queue.Queue(maxsize=200)
+_stt_q    = queue.Queue(maxsize=200)
 
 # ── 1. Capture thread — ONE stream, feeds both queues ─────────────────────────
 def capture_thread(device_index: int, stop_event: threading.Event):
@@ -147,7 +149,9 @@ def capture_thread(device_index: int, stop_event: threading.Event):
             try: _gru_q.put_nowait(blk)
             except queue.Full: _gru_q.get_nowait(); _gru_q.put_nowait(blk)
             try: _yamnet_q.put_nowait(blk)
-            except queue.Full: pass   # YAMNet can afford to skip a chunk
+            except queue.Full: pass
+            try: _stt_q.put_nowait(blk)
+            except queue.Full: pass
     finally:
         stream.stop_stream()
         stream.close()
@@ -270,6 +274,70 @@ def yamnet_thread(stop_event: threading.Event):
 
     print('[YAMNet] Stopped.')
 
+# ── 4. STT thread ─────────────────────────────────────────────────────────────
+STT_CHUNK_SEC   = 1.2
+STT_OVERLAP_SEC = 0.3
+STT_CHUNK_SAMP  = int(STT_CHUNK_SEC   * RATE)
+STT_OVERLAP_SAMP= int(STT_OVERLAP_SEC * RATE)
+STT_LANG        = 'ar-KW'   # change to 'en-US' for English
+
+def _merge_text(old: str, new: str) -> str:
+    old_w = old.strip().split()
+    new_w = new.strip().split()
+    if not old_w:
+        return new + ' '
+    for i in range(min(len(old_w), len(new_w)), 0, -1):
+        if old_w[-i:] == new_w[:i]:
+            return ' '.join(old_w + new_w[i:]) + ' '
+    return old.strip() + ' ' + new + ' '
+
+def stt_thread(stop_event: threading.Event):
+    try:
+        import speech_recognition as sr
+    except ImportError:
+        print('[STT] speech_recognition not installed — skipping.')
+        return
+
+    recognizer = sr.Recognizer()
+    audio_buf  = np.array([], dtype=np.float32)
+    transcript = ''
+    print(f'[STT] Ready — language={STT_LANG}  chunk={STT_CHUNK_SEC}s  overlap={STT_OVERLAP_SEC}s')
+
+    while not stop_event.is_set():
+        try:
+            blk = _stt_q.get(timeout=0.5)
+        except queue.Empty:
+            continue
+
+        # use ch 1 (same mono reference as YAMNet), normalised to float32
+        ch1 = blk[:, YAMNET_AUDIO_CH].astype(np.float32) / 32768.0
+        audio_buf = np.concatenate([audio_buf, ch1])
+
+        if len(audio_buf) < STT_CHUNK_SAMP:
+            continue
+
+        chunk    = audio_buf[:STT_CHUNK_SAMP]
+        # keep last overlap_samples for next window
+        audio_buf = audio_buf[STT_CHUNK_SAMP - STT_OVERLAP_SAMP:]
+
+        audio_int16 = (np.clip(chunk, -1.0, 1.0) * 32767).astype(np.int16)
+        google_audio = sr.AudioData(audio_int16.tobytes(), RATE, 2)
+
+        try:
+            text = recognizer.recognize_google(google_audio, language=STT_LANG).strip()
+            if text:
+                transcript = _merge_text(transcript, text)
+                # keep only last ~200 chars so the UI doesn't overflow
+                if len(transcript) > 200:
+                    transcript = transcript[-200:]
+                _update(transcript=transcript.strip())
+        except sr.UnknownValueError:
+            pass
+        except sr.RequestError as e:
+            print(f'[STT] Google STT error: {e}')
+
+    print('[STT] Stopped.')
+
 # ── FastAPI app ────────────────────────────────────────────────────────────────
 app = FastAPI()
 
@@ -313,6 +381,7 @@ def main():
         (capture_thread, (args.device, stop),              'Capture'),
         (gru_thread,     (args.model, args.rms, stop),     'GRU'),
         (yamnet_thread,  (stop,),                          'YAMNet'),
+        (stt_thread,     (stop,),                          'STT'),
     ]:
         threading.Thread(target=target, args=targs, name=name, daemon=True).start()
 
