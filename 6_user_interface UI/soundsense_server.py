@@ -1,25 +1,43 @@
 """
-SoundSense backend server
---------------------------
-Serves soundsense_v4.html and pushes live JSON over WebSocket.
-
+SoundSense backend server  –  v2 (dual-mic YAMNet + STT auto-clear)
+--------------------------------------------------------------------
 Architecture:
   [capture thread] — one PyAudio stream from ReSpeaker
        │
        ├──► gru_queue    ──► [GRU thread]     angle / confidence  (every 16ms)
-       ├──► yamnet_queue ──► [YAMNet thread]  sound label / scores (every ~1s)
+       ├──► yamnet_queue ──► [YAMNet thread]  dual-mic agreement filter (~1 s)
        └──► stt_queue    ──► [STT thread]     transcript (1.2s chunks, 0.3s overlap)
 
-Both inference threads run truly in parallel from the same audio stream.
+KEY CHANGES vs v1
+─────────────────
+1.  Dual-mic YAMNet agreement filter
+    • Reads ch 1 (reference mic) AND ch 2 (mic_right) in parallel.
+    • Runs YAMNet inference on each buffer independently.
+    • Accepts a label only when BOTH mics agree AND both confidence
+      scores exceed YAMNET_AGREE_THRESH (default 0.25).
+    • Relaxed matching: labels whose class-map indices are within
+      YAMNET_INDEX_TOLERANCE of each other are treated as the same
+      (reduces false negatives for similar sounds, e.g. "Speech" vs
+      "Conversation").
+    • On disagreement → outputs "Silence" so the UI stays clean.
+    • Weighted fusion: final scores = mean(mic1_scores, mic2_scores)
+      so the confidence bars reflect both mics.
+
+2.  STT auto-clear timestamp
+    • Backend now includes `transcript_ts` (Unix timestamp) in every
+      WebSocket push so the frontend can detect silence gaps.
+    • Frontend clears the transcript after 7 s of no new speech.
+
+3.  All other threads (capture, GRU, STT) are unchanged.
 
 Usage:
     python soundsense_server.py
     python soundsense_server.py --model audioLOC_GRU.pt --device 0 --port 8000
 """
 
-import os, sys, argparse, threading, queue
+import os, sys, argparse, threading, queue, time
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'   # CPU only (RPi / no GPU needed)
+os.environ['CUDA_VISIBLE_DEVICES']  = '-1'   # CPU only (RPi / no GPU needed)
 
 import numpy as np
 import pyaudio
@@ -31,9 +49,9 @@ from fastapi.responses import HTMLResponse
 
 from _features import extract_chunk_all, CHUNK_SAMPLES, RATE
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# ── Paths ───────────────────────────────────────────────────────────────────────
 HERE          = os.path.dirname(os.path.abspath(__file__))
-HTML_PATH     = os.path.join(HERE, 'soundsense_v4.html')
+HTML_PATH     = os.path.join(HERE, 'soundsense_v5.html')   # updated HTML filename
 
 GRU_MODEL_URL   = 'https://github.com/hayooka/audio_Localization_dataset/releases/download/v2.0/audioLOC_GRU.pt'
 GRU_MODEL_CACHE = os.path.join(os.path.expanduser('~'), '.soundsense', 'audioLOC_GRU.pt')
@@ -42,27 +60,37 @@ def ensure_model(path: str, url: str) -> str:
     if os.path.exists(path):
         return path
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    print(f'Downloading GRU model from GitHub release...')
+    print(f'[GRU] Downloading model from GitHub release …')
     from urllib.request import urlretrieve
     urlretrieve(url, path)
-    print(f'Saved to {path}')
+    print(f'[GRU] Saved to {path}')
     return path
 
 DEFAULT_MODEL = GRU_MODEL_CACHE
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+# ── Constants ───────────────────────────────────────────────────────────────────
 N_CHANNELS      = 6
 YAMNET_DURATION = 0.96
 YAMNET_SAMPLES  = int(YAMNET_DURATION * RATE)   # 15 360 samples (~1 s)
+
 # ReSpeaker XVF3800 channel layout (6-ch USB stream):
 #   ch 0 — processed/mixed output  (not used)
-#   ch 1 — mono reference mic      → YAMNet (sound recognition)
-#   ch 2 — mic_right  ┐
-#   ch 3 — mic_front  │ → GRU (DOA localization)
-#   ch 4 — mic_left   │
+#   ch 1 — mono reference mic      → YAMNet mic A  + STT
+#   ch 2 — mic_right               → YAMNet mic B  (second independent channel)
+#   ch 3 — mic_front  ┐
+#   ch 4 — mic_left   │ → GRU (DOA localization)
 #   ch 5 — mic_back   ┘
-YAMNET_AUDIO_CH = 1
-ANGLES          = list(range(0, 360, 15))
+YAMNET_CH_A = 1   # reference mic
+YAMNET_CH_B = 2   # directional mic (mic_right, physically separated)
+
+# ── Dual-mic agreement parameters ──────────────────────────────────────────────
+YAMNET_AGREE_THRESH  = 0.25   # both mics must exceed this confidence
+YAMNET_INDEX_TOLERANCE = 3    # class-map indices within ±3 are treated as equal
+                               # (catches "Speech" / "Conversation" / "Male speech"
+                               #  which sit adjacent in YAMNet's 521-class map)
+SILENCE_LABEL = 'Silence'
+
+ANGLES = list(range(0, 360, 15))
 
 ALERT_KEYWORDS = {
     'siren', 'alarm', 'smoke detector', 'fire alarm', 'buzzer',
@@ -74,7 +102,7 @@ def _is_alert(label: str) -> bool:
     low = label.lower()
     return any(kw in low for kw in ALERT_KEYWORDS)
 
-# ── GRU model ──────────────────────────────────────────────────────────────────
+# ── GRU model ───────────────────────────────────────────────────────────────────
 class SequenceGRU(nn.Module):
     def __init__(self, n_features, n_classes, embed_dim, hidden_dim, num_layers, dropout):
         super().__init__()
@@ -93,7 +121,7 @@ class SequenceGRU(nn.Module):
         out, _ = self.gru(self.embed(x))
         return self.classifier(out[:, -1, :])
 
-# ── Shared output state ────────────────────────────────────────────────────────
+# ── Shared output state ─────────────────────────────────────────────────────────
 _lock  = threading.Lock()
 _state = {
     'angle':        0,
@@ -104,6 +132,7 @@ _state = {
     'alert_msg':    '',
     'alert_hint':   '',
     'transcript':   '',
+    'transcript_ts': 0.0,   # NEW: Unix timestamp of last STT update
 }
 
 def _update(**kwargs):
@@ -114,7 +143,7 @@ def _snapshot():
     with _lock:
         return dict(_state)
 
-# ── Device detection ───────────────────────────────────────────────────────────
+# ── Device detection ────────────────────────────────────────────────────────────
 def find_respeaker(p: pyaudio.PyAudio):
     for i in range(p.get_device_count()):
         info = p.get_device_info_by_index(i)
@@ -122,14 +151,12 @@ def find_respeaker(p: pyaudio.PyAudio):
             return i
     return None
 
-# ── Shared audio queues ────────────────────────────────────────────────────────
-# Each queue receives raw 6-ch int16 numpy blocks from the capture thread.
-# maxsize keeps memory bounded if an inference thread falls behind.
+# ── Shared audio queues ─────────────────────────────────────────────────────────
 _gru_q    = queue.Queue(maxsize=50)
 _yamnet_q = queue.Queue(maxsize=200)
 _stt_q    = queue.Queue(maxsize=200)
 
-# ── 1. Capture thread — ONE stream, feeds both queues ─────────────────────────
+# ── 1. Capture thread ───────────────────────────────────────────────────────────
 def capture_thread(device_index: int, stop_event: threading.Event):
     p      = pyaudio.PyAudio()
     stream = p.open(
@@ -138,14 +165,13 @@ def capture_thread(device_index: int, stop_event: threading.Event):
         rate               = RATE,
         input              = True,
         input_device_index = device_index,
-        frames_per_buffer  = CHUNK_SAMPLES,   # 256 samples = 16ms
+        frames_per_buffer  = CHUNK_SAMPLES,
     )
     print('[Capture] Stream open.')
     try:
         while not stop_event.is_set():
             raw = stream.read(CHUNK_SAMPLES, exception_on_overflow=False)
             blk = np.frombuffer(raw, dtype=np.int16).reshape(-1, N_CHANNELS)
-            # non-blocking puts: drop oldest if a consumer is too slow
             try: _gru_q.put_nowait(blk)
             except queue.Full: _gru_q.get_nowait(); _gru_q.put_nowait(blk)
             try: _yamnet_q.put_nowait(blk)
@@ -153,12 +179,10 @@ def capture_thread(device_index: int, stop_event: threading.Event):
             try: _stt_q.put_nowait(blk)
             except queue.Full: pass
     finally:
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
+        stream.stop_stream(); stream.close(); p.terminate()
         print('[Capture] Stopped.')
 
-# ── 2. GRU inference thread ────────────────────────────────────────────────────
+# ── 2. GRU inference thread  (unchanged) ────────────────────────────────────────
 def gru_thread(model_path: str, rms_thresh: float, stop_event: threading.Event):
     dev  = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_path = ensure_model(model_path, GRU_MODEL_URL)
@@ -179,10 +203,10 @@ def gru_thread(model_path: str, rms_thresh: float, stop_event: threading.Event):
     model.load_state_dict(ckpt['model_state'])
     model.eval()
 
-    mean    = ckpt['scaler_mean']
-    std     = ckpt['scaler_std']
-    buf     = np.zeros((seq_len, n_feat), dtype=np.float32)
-    filled  = 0
+    mean   = ckpt['scaler_mean']
+    std    = ckpt['scaler_std']
+    buf    = np.zeros((seq_len, n_feat), dtype=np.float32)
+    filled = 0
     print(f'[GRU] Ready — seq={seq_len} frames ({seq_len * CHUNK_SAMPLES / RATE * 1000:.0f}ms context)')
 
     while not stop_event.is_set():
@@ -199,7 +223,6 @@ def gru_thread(model_path: str, rms_thresh: float, stop_event: threading.Event):
             'mic_back':  blk_f[:, 5],
         }
         rms_vals, feat = extract_chunk_all(ch)
-
         buf    = np.roll(buf, -1, axis=0)
         buf[-1] = feat
         filled  = min(filled + 1, seq_len)
@@ -217,8 +240,25 @@ def gru_thread(model_path: str, rms_thresh: float, stop_event: threading.Event):
 
     print('[GRU] Stopped.')
 
-# ── 3. YAMNet inference thread ─────────────────────────────────────────────────
+# ── 3. YAMNet dual-mic inference thread  (NEW) ─────────────────────────────────
 def yamnet_thread(stop_event: threading.Event):
+    """
+    Runs YAMNet on two independent microphone channels in parallel.
+
+    Agreement rule
+    ──────────────
+    • Both mics must produce the SAME top-1 label (or labels whose
+      class indices are within YAMNET_INDEX_TOLERANCE of each other).
+    • Both top-1 confidence scores must exceed YAMNET_AGREE_THRESH.
+    • If either condition fails → output SILENCE_LABEL so the UI stays
+      clean and no incorrect label is displayed.
+
+    Fusion
+    ──────
+    When both mics agree, the final per-class scores sent to the UI are
+    the element-wise mean of both mics' score vectors.  This gives more
+    stable confidence bars than using only one mic.
+    """
     try:
         import tensorflow_hub as hub
     except ImportError:
@@ -232,9 +272,13 @@ def yamnet_thread(stop_event: threading.Event):
     with open(class_map_path) as f:
         for line in f.readlines()[1:]:
             class_names.append(line.split(',')[2].strip())
-    print(f'[YAMNet] Ready — {len(class_names)} classes')
+    n_classes = len(class_names)
+    print(f'[YAMNet] Ready — {n_classes} classes | '
+          f'agree_thresh={YAMNET_AGREE_THRESH} | '
+          f'index_tolerance={YAMNET_INDEX_TOLERANCE}')
 
-    audio_buf = []
+    buf_a = []   # reference mic  (ch 1)
+    buf_b = []   # directional mic (ch 2)
 
     while not stop_event.is_set():
         try:
@@ -242,28 +286,71 @@ def yamnet_thread(stop_event: threading.Event):
         except queue.Empty:
             continue
 
-        ch1 = blk[:, YAMNET_AUDIO_CH].astype(np.float32) / 32768.0
-        audio_buf.extend(ch1)
+        # Accumulate both channels simultaneously
+        buf_a.extend(blk[:, YAMNET_CH_A].astype(np.float32) / 32768.0)
+        buf_b.extend(blk[:, YAMNET_CH_B].astype(np.float32) / 32768.0)
 
-        if len(audio_buf) < YAMNET_SAMPLES:
+        # Wait until we have a full inference window for both
+        if len(buf_a) < YAMNET_SAMPLES or len(buf_b) < YAMNET_SAMPLES:
             continue
 
-        waveform  = np.array(audio_buf[:YAMNET_SAMPLES], dtype=np.float32)
-        audio_buf = audio_buf[YAMNET_SAMPLES:]
+        # Consume one window from each buffer (non-overlapping for stability)
+        wav_a = np.array(buf_a[:YAMNET_SAMPLES], dtype=np.float32)
+        wav_b = np.array(buf_b[:YAMNET_SAMPLES], dtype=np.float32)
+        buf_a = buf_a[YAMNET_SAMPLES:]
+        buf_b = buf_b[YAMNET_SAMPLES:]
 
-        scores, _, _ = yamnet(waveform)
-        mean_scores  = scores.numpy().mean(axis=0)
-        top_idx      = np.argsort(mean_scores)[-5:][::-1]
+        # ── Independent inference ──────────────────────────────────────────────
+        scores_a, _, _ = yamnet(wav_a)
+        scores_b, _, _ = yamnet(wav_b)
+
+        mean_a = scores_a.numpy().mean(axis=0)   # shape (n_classes,)
+        mean_b = scores_b.numpy().mean(axis=0)
+
+        top_idx_a = int(np.argmax(mean_a))
+        top_idx_b = int(np.argmax(mean_b))
+        top_conf_a = float(mean_a[top_idx_a])
+        top_conf_b = float(mean_b[top_idx_b])
+
+        # ── Agreement check ────────────────────────────────────────────────────
+        # Relaxed: indices within tolerance are treated as matching
+        indices_agree = abs(top_idx_a - top_idx_b) <= YAMNET_INDEX_TOLERANCE
+        conf_ok       = (top_conf_a >= YAMNET_AGREE_THRESH and
+                         top_conf_b >= YAMNET_AGREE_THRESH)
+
+        if not (indices_agree and conf_ok):
+            # Disagreement or low confidence — output silence
+            _update(
+                sound_label  = SILENCE_LABEL,
+                sound_scores = [],
+                is_alert     = False,
+                alert_msg    = '',
+                alert_hint   = '',
+            )
+            continue
+
+        # ── Fuse scores (mean of both mics) ────────────────────────────────────
+        fused = (mean_a + mean_b) / 2.0
+
+        # Pick the agreed-upon label (use mic A's top index as reference,
+        # then re-rank by fused scores among top-5)
+        top_indices = np.argsort(fused)[-5:][::-1]
 
         scores_out = [
-            {'label': class_names[i], 'score': round(float(mean_scores[i]), 3)}
-            for i in top_idx if mean_scores[i] > 0.05
+            {'label': class_names[i], 'score': round(float(fused[i]), 3)}
+            for i in top_indices
+            if fused[i] > 0.05
         ]
         if not scores_out:
             continue
 
         top_label = scores_out[0]['label']
         alert     = _is_alert(top_label)
+
+        print(f'[YAMNet] AGREED  {top_label!r}  '
+              f'A={top_conf_a:.2f}  B={top_conf_b:.2f}  '
+              f'idx_A={top_idx_a}  idx_B={top_idx_b}')
+
         _update(
             sound_label  = top_label,
             sound_scores = scores_out,
@@ -274,12 +361,12 @@ def yamnet_thread(stop_event: threading.Event):
 
     print('[YAMNet] Stopped.')
 
-# ── 4. STT thread ─────────────────────────────────────────────────────────────
-STT_CHUNK_SEC   = 1.2
-STT_OVERLAP_SEC = 0.3
-STT_CHUNK_SAMP  = int(STT_CHUNK_SEC   * RATE)
-STT_OVERLAP_SAMP= int(STT_OVERLAP_SEC * RATE)
-STT_LANG        = 'ar-KW'   # change to 'en-US' for English
+# ── 4. STT thread  (transcript_ts added) ───────────────────────────────────────
+STT_CHUNK_SEC    = 1.2
+STT_OVERLAP_SEC  = 0.3
+STT_CHUNK_SAMP   = int(STT_CHUNK_SEC   * RATE)
+STT_OVERLAP_SAMP = int(STT_OVERLAP_SEC * RATE)
+STT_LANG         = 'ar-KW'   # change to 'en-US' for English
 
 def _merge_text(old: str, new: str) -> str:
     old_w = old.strip().split()
@@ -309,28 +396,26 @@ def stt_thread(stop_event: threading.Event):
         except queue.Empty:
             continue
 
-        # use ch 1 (same mono reference as YAMNet), normalised to float32
-        ch1 = blk[:, YAMNET_AUDIO_CH].astype(np.float32) / 32768.0
+        ch1 = blk[:, YAMNET_CH_A].astype(np.float32) / 32768.0
         audio_buf = np.concatenate([audio_buf, ch1])
 
         if len(audio_buf) < STT_CHUNK_SAMP:
             continue
 
-        chunk    = audio_buf[:STT_CHUNK_SAMP]
-        # keep last overlap_samples for next window
+        chunk     = audio_buf[:STT_CHUNK_SAMP]
         audio_buf = audio_buf[STT_CHUNK_SAMP - STT_OVERLAP_SAMP:]
 
-        audio_int16 = (np.clip(chunk, -1.0, 1.0) * 32767).astype(np.int16)
+        audio_int16  = (np.clip(chunk, -1.0, 1.0) * 32767).astype(np.int16)
         google_audio = sr.AudioData(audio_int16.tobytes(), RATE, 2)
 
         try:
             text = recognizer.recognize_google(google_audio, language=STT_LANG).strip()
             if text:
                 transcript = _merge_text(transcript, text)
-                # keep only last ~200 chars so the UI doesn't overflow
                 if len(transcript) > 200:
                     transcript = transcript[-200:]
-                _update(transcript=transcript.strip())
+                # Include transcript_ts so the frontend can auto-clear after silence
+                _update(transcript=transcript.strip(), transcript_ts=time.time())
         except sr.UnknownValueError:
             pass
         except sr.RequestError as e:
@@ -338,7 +423,7 @@ def stt_thread(stop_event: threading.Event):
 
     print('[STT] Stopped.')
 
-# ── FastAPI app ────────────────────────────────────────────────────────────────
+# ── FastAPI ─────────────────────────────────────────────────────────────────────
 app = FastAPI()
 
 @app.get('/', response_class=HTMLResponse)
@@ -357,7 +442,7 @@ async def ws_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+# ── Entry point ─────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model',  default=DEFAULT_MODEL)
