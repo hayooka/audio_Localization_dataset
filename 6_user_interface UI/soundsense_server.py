@@ -38,6 +38,7 @@ Usage:
 import os, sys, argparse, threading, queue, time
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 os.environ['CUDA_VISIBLE_DEVICES']  = '-1'   # CPU only (RPi / no GPU needed)
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/home/karim/google_credentials.json'
 
 import numpy as np
 import pyaudio
