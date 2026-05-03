@@ -284,12 +284,13 @@ The function of the device is to assist deaf and hard-of-hearing people by conve
  
 
 \subsection{Detailed Low-Level Specifications}
+The finalized Low-Level Design (LLD) describes the detailed implementation of the system at the component level. Also, Low-Level Design focuses on the specific hardware and software components and how they are connected. It defines the exact elements used in the system, including hardware modules, software processing blocks, communication interfaces, and code-level operations. The low-level design also explains how each component operates and interacts with others through hardware blocks, schematics, pin-level connections, and communication protocols. This level of detail ensures that the Assistive AR system can be accurately implemented, tested, and maintained while demonstrating how all components work together to achieve the desired functionality.
 \paragraph{Hardware Low-Level Design\\}
 The detailed low-level specifications present the hardware architecture of the proposed assistive system, emphasizing component interconnections, signal flow, and data communication between system modules.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.8\linewidth]{low_level.png}
+\includegraphics[width=0.85\linewidth]{low_level.png}
 \caption{Low-level hardware architecture of the proposed assistive system showing audio acquisition, processing unit, and web-based interface output over Wi-Fi.}
 \label{fig:low_level_arch}
 \end{figure}
@@ -307,7 +308,7 @@ The software low-level design defines how captured audio is processed to generat
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.8\linewidth]{softwarelowlevel.png}
+\includegraphics[width=0.9\linewidth]{softwarelowlevel.png}
 \caption{Software low-level design of the proposed assistive system showing the real-time audio processing pipeline, parallel core tasks, multimodal fusion, and web-based output.}
 \label{fig:sw_low_level}
 \end{figure} 
@@ -375,7 +376,7 @@ The sound emitting loudspeaker was placed 1.75 meter away from the ReSpeaker mic
 There were two recordings per angle: the first 5 minutes used the same recording for all degrees (same speech for one person), and the second 3 minutes each degree had a position-specific recording. All the recordings were speech. The recordings taken from the ReSpeaker are raw WAV files. 
 \begin{figure}
 \centering
-\includegraphics[width=0.45\linewidth]{E1-F.jpeg}
+\includegraphics[width=0.5\linewidth]{E1-F.jpeg}
 \caption{Experimental setup for Sound Source Localization: realistic environment geometry, receiver position and source positions.}
 \label{fig:E1-F}
 \end{figure}
@@ -403,7 +404,7 @@ Table~\ref{tab:results}.
 
 \begin{table}[h]
 \centering
-\scriptsize
+%\scriptsize
 \caption{Localization performance by feature 50ms}
 \label{tab:results}
 \begin{tabular}{|l|c|c|c|c|c|c|}
@@ -431,17 +432,11 @@ corresponding to minimal angular errors
 This is expected, as training and testing are conducted on the same recording set, resulting in minimal domain shift.\newline
 
 \noindent
-In contrast, Scenario 2 (S2) reveals significant performance degradation across all individual features, as the model is evaluated on a separate recording set. This scenario better reflects real-world conditions and highlights the model's generalization capability across acoustic environments.\newline
-
-\noindent
-GCC-based features maintain reasonable performance, confirming their robustness to acoustic variability, while IPD and Log-Mel show degradation since they are more sensitive to environmental changes, highlighting the superior robustness of time-delay features over phase-based and spectral representations. \newline
-
-\noindent
-The combined feature set (All Features) achieves the best overall performance in both scenarios. This demonstrates that multi-feature fusion enhances robustness and generalization by leveraging complementary information across time-delay, phase, and spectral domains, effectively mitigating individual feature weaknesses.
+In contrast, Scenario 2 (S2) reveals significant performance degradation across all individual features, as the model is evaluated on a separate recording set. This scenario better reflects real-world conditions and highlights the model's generalization capability across acoustic environments. GCC-based features maintain reasonable performance, confirming their robustness to acoustic variability, while IPD and Log-Mel show degradation since they are more sensitive to environmental changes, highlighting the superior robustness of time-delay features over phase-based and spectral representations. The combined feature set (All Features) achieves the best overall performance in both scenarios. This demonstrates that multi-feature fusion enhances robustness and generalization by leveraging complementary information across time-delay, phase, and spectral domains, effectively mitigating individual feature weaknesses.
 
 \begin{table}[h]
 \centering
-\scriptsize
+%\scriptsize
 \caption{Effect of frame size on S2 performance}
 \label{tab:frame_size}
 \begin{tabular}{|c|c|c|}
@@ -456,8 +451,9 @@ The combined feature set (All Features) achieves the best overall performance in
 \hline
 \end{tabular}
 \end{table}
+
 \noindent
-Increasing the frame size also improved S2 accuracy progressively, as shown in Table~\ref{tab:frame_size}. However, larger frames reduce temporal resolution. Based on this trade-off, we used 50 ms to balance between response time and accuracy. Figure ~\ref{fig:curve_cnn50} show the training and validation accuracy, and several tests were conducted in subsection~\ref{sec:ssl} to evaluate the use of 50 ms.
+\newline Increasing the frame size also improved S2 accuracy progressively, as shown in Table~\ref{tab:frame_size}. However, larger frames reduce temporal resolution. Based on this trade-off, we used 50 ms to balance between response time and accuracy. Figure ~\ref{fig:curve_cnn50} show the training and validation accuracy, and several tests were conducted in subsection~\ref{sec:ssl} to evaluate the use of 50 ms.
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{results_ALL_50ms.png}
@@ -466,60 +462,24 @@ Increasing the frame size also improved S2 accuracy progressively, as shown in T
 \end{figure}
 
 
-
-
 \subsubsection{Sound Recognition}
-The sound recognition subsystem was implemented as a core component of the proposed assistive system to enable real-time environmental sound classification for hearing-impaired users. The implementation was based on the pretrained YAMNet deep learning model, selected for its lightweight architecture, fast inference speed, and capability to classify more than 500 environmental sound categories.\newline
 
-\noindent
-The subsystem was developed in Python and executed on the Raspberry Pi 5 platform. Audio signals were captured using the ReSpeaker XVF3800 microphone array at a sampling rate of 16 kHz in 16-bit PCM format. A mono audio channel was used as the input stream for classification.\newline
-
-\noindent
-Incoming audio was segmented into 0.96-second frames, matching the required YAMNet input duration. Each segment was processed to generate log-Mel spectrogram features before being passed to the neural network model. For every segment, the model produced a predicted sound label and an associated confidence score.\newline
-
-\noindent 
-Planned experiments were designed to simulate realistic indoor daily-use scenarios. Testing was conducted in an enclosed room with approximate dimensions of \(6 \times 5 \times 2.8\) meters. Different sound categories were evaluated, including speech, silence, coughing, household object sounds, alarms, footsteps, and animal sounds. Both near-field and far-field sound sources were considered.\newline
-
-\noindent
-Performance evaluation focused on classification accuracy, confidence consistency, inference latency, and robustness under practical indoor conditions.
+The sound recognition subsystem was implemented as a core component of the proposed assistive system to enable real-time environmental sound classification for hearing-impaired users. The implementation was based on the pretrained YAMNet deep learning model, selected for its lightweight architecture, fast inference speed, and ability to classify more than 500 environmental sound categories. The subsystem was developed in Python and executed on the Raspberry Pi 5 platform. Audio signals were captured using the ReSpeaker XVF3800 microphone array at a sampling rate of 16 kHz in 16-bit PCM format, where a mono audio channel was used as the input for classification. Incoming audio was segmented into 0.96-second frames, consistent with the YAMNet input requirements, and each segment was converted into log-Mel spectrogram features before being passed to the neural network for prediction.
+The experimental evaluation was designed to simulate realistic indoor usage scenarios. Testing was conducted in an enclosed environment of approximately \(6 \times 5 \times 2.8\) meters, covering various sound categories such as speech, silence, coughing, alarms, footsteps, animal sounds, and everyday object interactions. Both near-field and far-field sound sources were considered to assess system robustness. Performance evaluation focused on classification accuracy, confidence consistency, inference latency, and reliability under practical conditions, ensuring that the subsystem operates efficiently and supports real-time assistive functionality.
 
 \subsubsection{Speech To Text}
 
-Speech-to-Text (STT) subsystem was deployed as one of the major parts of the system to change spoken language into readable text in real time, to provide hearing-impaired users with the ability to access speech information more efficiently. The subsystem captures the audio input via the ReSpeaker microphone, then sends it to the Raspberry Pi 5 to process and convert it through the Google Speech-to-Text (Google STT) API.\newline
+The Speech-to-Text (STT) subsystem was implemented to convert spoken language into readable text in real time, allowing hearing-impaired users to follow conversations more effectively. Audio input is captured through the microphone and processed by the speech recognition module, where the spoken content is converted into text and displayed on the user interface. At the initial stage of implementation, Faster-Whisper was tested as the first approach for speech recognition. However, the achieved accuracy was relatively low, reaching approximately 37\%, and the output contained noticeable transcription errors. In some cases, the meaning of the spoken sentence was not clearly preserved, which limited its effectiveness for real-time use. Based on these observations, an alternative approach using Google Speech-to-Text was evaluated.\newline
 
 \noindent
-Google STT is a speech recognition service based on the cloud computing platform and it is highly accurate in transcription and has low latency, thus can be used in real-time assistive applications. It was chosen among the various models because it is more reliable, responsive and has stable performance in case of constant use. Also, it supports many dialects, including the Kuwaiti dialect.\newline
-
-\noindent
-The subsystem helps in enhancing the usability of the subsystem in a variety of environments by supporting English and Arabic speech. But Arabic speech recognition poses even more issues because of the variations in pronunciation and dialect that were taken into consideration in the tests and evaluation.\newline
-
-\noindent
-This system was tested by using recorded sentences and words (such as podcast-style audio) as well as live speech from users in English, Arabic, and the Kuwaiti dialect. The audio was captured through the microphone, processed using Google STT, and the output was evaluated as correct, partially correct, or incorrect. After several tests, the accuracy is determined based on the output evaluation.\newline
-
-\noindent
-The audio input was recorded using a sampling rate of 16 kHz and one audio channel (mono), which is suitable for speech recognition. The real-time audio was divided into chunks with a duration of 1.2 seconds, with 0.3 seconds of overlap between each chunk. This reduced the chance of losing words between audio segments. Before being sent to Google STT for transcription, the recorded audio was converted into 16-bit audio format.\newline
-
-\noindent
-The output that is transcribed appears on a web-based user interface, which enables users to track conversations and spoken words in real time. The first design was to incorporate AR-based visualization but because of the hardware restriction and the cost factor, the present implementation is based on the web interface to achieve a practical implementation and testing.
-
+After implementing Google Speech-to-Text, the system performance improved significantly. The accuracy increased to above 85\%, while the number of unclear or incorrect outputs was greatly reduced. The generated text became more consistent and understandable, making it more suitable for real-time assistive use. Based on this comparison, Google Speech-to-Text was selected as the final solution for the STT subsystem. The final implementation supports both English and Arabic speech. English recognition showed more stable results, while Arabic required additional testing due to pronunciation differences and dialect variations, particularly with Kuwaiti Arabic. Despite these challenges, the system was able to produce acceptable and meaningful outputs in both languages. The transcribed text is displayed through a web-based interface, allowing users to read spoken content in real time, which directly supports the main objective of improving communication accessibility for deaf and hard-of-hearing users in everyday situations.
 \subsubsection{Interface Implementation}
 
-The developed user interface provides clear, real-time, and accessible information to hearing-impaired users through a structured and intuitive visual layout. The interface presents three main components: sound recognition, sound source localization, and speech-to-text transcription.\newline
+The developed user interface provides clear, real-time, and accessible information to hearing-impaired users through a structured and intuitive visual layout. The interface integrates three main components: sound recognition, sound source localization, and speech-to-text transcription. Detected environmental sounds are displayed as prominent labels (e.g., \textit{Alarm}, \textit{Knock}) with descriptive context to support quick understanding of surrounding events. In Detailed Mode, confidence indicators are presented using progress bars to reflect prediction reliability, while Light Mode displays only the essential sound label to reduce visual complexity and improve readability.
+Sound source localization is visualized using a circular directional map that captures sound from all directions (360° around the user), combined with a pointer indicating the estimated direction. The output is presented both as an angle (in degrees) and as an intuitive directional label (e.g., Front, Right, Behind), ensuring accurate and user-friendly interpretation. This dual representation enhances situational awareness while maintaining simplicity in the interface design. In parallel, speech-to-text output is continuously displayed in a dedicated section, providing live transcription of spoken sentences, where important or newly recognized words are visually highlighted to improve readability and user attention. \newline
 
 \noindent
-Detected environmental sounds are displayed as prominent labels (e.g., \textit{Alarm}, \textit{Knock}) along with descriptive context to help users quickly understand the surrounding event. In Detailed Mode, additional confidence indicators are presented using progress bars to reflect prediction reliability, while in Light Mode only the most relevant sound label is shown to reduce visual complexity.\newline
-
-\noindent
-Sound source localization is visualized using a circular directional map combined with a pointer indicating the estimated direction. The output is presented both as an angle (in degrees) and as an intuitive directional label (e.g., Front, Right, Behind), ensuring precise yet user-friendly interpretation. This dual representation enhances situational awareness while keeping the interface easy to understand.\newline
-
-\noindent
-Speech-to-text output is continuously displayed in a dedicated section, showing live transcriptions of spoken sentences. Important or newly recognized words are visually highlighted to improve readability and user attention.\newline
-
-\noindent
-As shown in Figures~\ref{fig:ui_detailed} and \ref{fig:ui_light}, two operating modes were implemented to support different usage scenarios. Detailed Mode provides comprehensive information, including sound probabilities, directional visualization, and contextual details, making it suitable for maximum environmental awareness. In contrast, Light Mode presents only essential outputs such as the detected sound, direction, and speech caption, offering a simplified and distraction-free interface for everyday use.\newline
-
-\noindent
-Additional interface elements include real-time system status indicators (e.g., Live mode) and visual warning messages for critical events such as alarms, which are highlighted using distinct colors to ensure immediate user attention.
+As shown in Figures~\ref{fig:ui_detailed} and \ref{fig:ui_light}, two operating modes were implemented to support different usage scenarios. Detailed Mode provides comprehensive information, including sound probabilities, directional visualization, and contextual details, making it suitable for maximum environmental awareness. In contrast, Light Mode presents only essential outputs such as detected sounds, direction, and speech captions, offering a simplified and distraction-free interface for everyday use. Additional interface elements include real-time system status indicators (e.g., Live mode) and visual warning messages for critical events such as alarms, which are highlighted using distinct colors to ensure immediate user attention.
 
 \begin{figure}[H]
 \centering
@@ -623,22 +583,22 @@ Based on the previous results, in the third test, the default ReSpeaker output w
 But still, as shown in Figure~\ref{fig:T3realtime}, the CNN model shows low accuracy in both scenarios. The polar plot also shows clear dispersion across most angles, indicating that the model still struggles to predict the correct direction. This may be due to the increased distance and the height difference between the ReSpeaker and the speaker, which makes the sound localization task more challenging.\newline
 
 \noindent
- Table \ref{tab:test_results} show the overall Accuracy, Error Distribution, and Latency are presented for all three tests when the confidence level was 90\% and above.\newline
+ Table~\ref{tab:test_results} shows the overall accuracy, error distribution, and latency for all three tests at a confidence level of 90\% and above. Additionally, a hardware issue was observed during Test~2, where the model occasionally misclassified silence, resulting in the loss of some frames. Further improvements were explored using new techniques, which are discussed in the following section.
 
-\noindent
-In addition, a hardware issue was observed during Test 2, where the model sometimes detected silence incorrectly, resulting in the loss of some frames. We worked on further improvements using new techniques, which will be explained in the following section.
-
-\begin{table}[H]
+\begin{table}[h]
 \centering
-\caption{Comparison of Localization Test Results}
+\caption{Performance comparison across different tests at $\geq$90\% confidence level}
 \label{tab:test_results}
 \begin{tabular}{|c|c|c|c|}
 \hline
 Test & Accuracy (\%) & Error Distribution ($^\circ$) & Latency (ms) \\
 \hline
 1 & 30.8 & 19.2 & 168.1 \\
+\hline
 2 & 25.1 & 33.4 & 168.7 \\
+\hline
 3 (Model) & 19.79 & 57.07 & 166.92 \\
+\hline
 3 (ReSpeaker) & 13.12 & 58.03 & 166.92 \\
 \hline
 \end{tabular}
@@ -647,38 +607,63 @@ Test & Accuracy (\%) & Error Distribution ($^\circ$) & Latency (ms) \\
 
 \subsubsection{Sound Recognition}
 
-The sound recognition subsystem was evaluated based on classification accuracy, confidence scores, and response consistency under different environmental conditions. The experimental results confirmed that the subsystem performs reliably in real time under practical indoor environments.
+The sound recognition subsystem was evaluated based on classification accuracy, confidence scores, and response consistency under real-time indoor conditions. 
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.8\linewidth]{sound_recognition_graph.png}
-\caption{Real-time accuracy of the sound recognition subsystem across different sound categories.}
+\begin{subfigure}{0.9\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{Figure_1.png}
+    \caption{Real Time accuracy by sound category.}
+\end{subfigure}
+
+\par\vspace{0.5cm} % <-- key fix
+
+\begin{subfigure}{0.65\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{recognition_m.jpeg}
+    \caption{Example real-time predictions and confidince score.}
+\end{subfigure}
+\caption{Real-time accuracy of the sound recognition subsystem across different sound
+categories and example prediction confidence scores.}
 \label{fig:sound_accuracy}
 \end{figure}
-\noindent
-As shown in Figure~\ref{fig:sound_accuracy}, the subsystem achieves high real-time accuracy across different sound categories. Human speech achieved the highest performance with near-perfect accuracy, followed by alarms and animal sounds. Other sound classes such as tools and footsteps also demonstrated strong performance, with overall accuracy ranging between 88\% and 95\%.\newline
+
+As shown in Figure~\ref{fig:sound_accuracy}, the subsystem achieves high real-time accuracy across multiple sound categories. Speech detection achieved the highest accuracy (approximately 100\%), followed by alarms (95\%) and animal-related sounds (92\%). Other categories such as tools and footsteps also demonstrated strong performance, with overall system accuracy reaching approximately 92\%.\newline
 
 \noindent
-The subsystem successfully classified a wide range of environmental sounds, including conversations, alarms, footsteps, object interactions, and animal sounds. Human speech was consistently detected with high confidence values ranging from 0.97 to 1.0, while silence was correctly identified with a confidence score of 1.0 in the absence of sound. Hierarchical recognition behavior was observed in some cases, where predictions were refined from general labels (e.g., animal) to more specific classes (e.g., cat, meow).\newline
+In addition to accuracy results, the subsystem provides confidence-based predictions for detected sounds. Experimental observations show that the system can identify both general and specific sound classes, where predictions are refined hierarchically (e.g., from \textit{animal} to \textit{cat} and \textit{meow}). High-confidence predictions were observed for clear and close-range sounds, while lower confidence values appeared in cases involving background noise, distance, or overlapping audio signals. Performance analysis indicates that recognition accuracy is influenced by environmental factors such as sound distance and acoustic conditions. Sounds generated closer to the microphone resulted in higher confidence scores, while distant or weaker sounds showed reduced confidence due to signal attenuation. Despite minor misclassifications between acoustically similar sounds, these cases occurred with low confidence values and did not affect the overall system functionality. \newline
 
 \noindent
-Performance analysis showed that recognition accuracy is influenced by several factors, including background noise, sound distance, and overlapping audio events. As the distance between the sound source and the microphone increases, signal attenuation and environmental effects reduce feature clarity, leading to lower confidence scores. For example, cough detection at approximately four meters resulted in reduced confidence due to acoustic attenuation and room conditions. Additionally, overlapping sounds introduce ambiguity in feature extraction, which may affect classification reliability.\newline
-
-\noindent
-The use of the pretrained YAMNet model enables robust generalization across a wide range of sound classes; however, minor misclassifications were observed between acoustically similar sounds. These cases typically occurred with low confidence values and did not significantly impact the system's primary objective of notifying users about important surrounding sounds. Confidence-based filtering can further improve reliability during real-time operation.\newline
-
-\noindent
-From a system perspective, the model provides low-latency inference suitable for real-time assistive applications. Detected sound events are presented with minimal delay, ensuring timely awareness and improved responsiveness, particularly for critical sounds such as alarms and warnings.
+Overall, the subsystem provides stable low-latency performance suitable for real-time assistive applications, ensuring that detected sound events are delivered promptly and accurately to the user interface.
 
 
 \subsubsection{Speech To Text}
 The Speech-to-Text subsystem was tested in different test conditions to check its functionality, accuracy, and usability in various situations. Initially, when we wanted to choose the model to use for the project, we tried multiple speech recognition systems, such as Faster-Whisper and Google Speech-to-Text (Google STT). We compared the accuracy of transcription, response time, and stability of the system. Based on this comparison, Google STT was selected for the final implementation.\newline
 
 \noindent
-According to the experimental findings, Faster-Whisper was tested for Arabic language and Kuwaiti dialect under three different conditions: Kuwaiti dialect words and short phrases, adult vs. child voice, and noisy environment. The results showed that the system recognized the Kuwaiti dialect with some spelling variations. Words and short phrases were faster than full sentences. The response time for words and phrases was around 3.5 s, while short sentences took around 5.5–6 s. In noisy environments, the response time increased to around 6 s with slightly lower accuracy. For the English language, the results were better, although audio clarity significantly affected accuracy, and model performance depended on the environment. The response time was shorter than the Arabic version, and the errors were fewer.\newline
+According to the experimental findings, Faster-Whisper was tested for Arabic language and Kuwaiti dialect under three different conditions: Kuwaiti dialect words and short phrases, adult vs. child voice, and noisy environment. This test was conducted for Arabic, English, and Kuwaiti dialect speech.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.46\linewidth]{fasterwhisper.jpg}
+    \caption{Experimental results and evaluation metrics of the Faster-Whisper model under different test conditions, showing accuracy and classification results.}
+    \label{fig:fasterwhisper}
+\end{figure}
+
+As shown in Figure \ref{fig:fasterwhisper},  the system achieved an accuracy of 37.5\%. The results showed that the system recognized the Kuwaiti dialect with some spelling variations. Words and short phrases were faster than full sentences. The response time for words and phrases was around 3.5 s, while short sentences took around 5.5–6 s. In noisy environments, the response time increased to around 6 s with slightly lower accuracy. For the English language, the results were better, although audio clarity significantly affected accuracy, and model performance depended on the environment. The response time was shorter than the Arabic version, and the errors were fewer.\newline
+
+
 
 \noindent
-The same test conditions were applied to Google STT. It was chosen to be implemented in the final system because of its better performance, especially in real-time processing. The response time in Arabic and English was very similar. Short sentences: ~2.3–2.5 s, medium sentences: ~4.5–5.8 s, and long sentences: ~7–9 s. However, it showed greater transcription accuracy and more reliable output compared to the other methods.\newline
+The same test conditions were applied to Google STT. The Google STT test was also conducted for Arabic, English, and Kuwaiti dialect speech, as shown in Figure\ref{fig:googleSTT}, and the system achieved an accuracy of 83.64\%. It was chosen to be implemented in the final system because of its better performance, especially in real-time processing. The response time in Arabic and English was very similar. Short sentences: ~2.3–2.5 s, medium sentences: ~4.5–5.8 s, and long sentences: ~7–9 s. However, it showed greater transcription accuracy and more reliable output compared to the other methods.\newline
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{googleSTT.jpg}
+    \caption{Experimental results and evaluation metrics of the Google Speech-to-Text (Google STT) subsystem showing accuracy, number of tests, and response performance.}
+    \label{fig:googleSTT}
+\end{figure}
 
 \noindent
 Arabic speech recognition was further complicated by dialects, pronunciation, and the phonetic similarity of some words. These difficulties sometimes led to slight mistakes in the transcription process, yet they did not greatly affect the general comprehension of the sentence. The design priority was to provide meaningful and understandable output rather than word-level accuracy.
@@ -759,7 +744,9 @@ critical role of long-range temporal modeling for sound source localization.
 Model & Frame & Seq & Overlap & Acc & Precision & Recall & F1 & MAE \\
 \hline
 CNN & 16\,ms & 1  & No   & 76.34\% & --    & --    & --    & 12.7° \\
+\hline
 CNN & 16\,ms & 2  & 50\% & 83.04\% & 0.868 & 0.830 & 0.837 & 12.4° \\
+\hline
 GRU & 16\,ms & 32 & 50\% & \textbf{99.22\%} & \textbf{0.992} & \textbf{0.992} & \textbf{0.992} & \textbf{0.4°} \\
 \hline
 \end{tabular}
@@ -856,7 +843,7 @@ Compared to earlier real-time results in Table~\ref{tab:test_results}, performan
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.8\linewidth]{plots/realtime_summary_comparison.png}
+\includegraphics[width=0.9\linewidth]{plots/realtime_summary_comparison.png}
 \caption{Overall real-time localization comparison between CNN, GRU, and ReSpeaker DOA.}
 \label{fig:realtime_summary}
 \end{figure}
@@ -870,7 +857,9 @@ Compared to earlier real-time results in Table~\ref{tab:test_results}, performan
 Model & Speech Frames & Exact Acc & $\pm$15° Acc & MAE \\
 \hline
 CNN (16\,ms, seq=2)    & 5764 & 35.4\% & 82.9\% & 16.8° \\
+\hline
 GRU (16\,ms, seq=32)   & 5320 & 46.1\% & 90.7\% & 9.5°  \\
+\hline
 ReSpeaker Built-in DOA & 2397 & \textbf{88.1\%} & \textbf{92.9\%} & \textbf{9.2°}  \\
 \hline
 \end{tabular}
@@ -883,13 +872,10 @@ Overall, while the ReSpeaker DOA achieves the highest absolute performance, the 
 
 
 \subsubsection{Sound Recognition}
-Several improvements were introduced to enhance the reliability and usability of the sound recognition subsystem. Confidence-based filtering was applied so that low-confidence predictions were suppressed, reducing unnecessary false alerts. Priority handling was also introduced for critical sound classes such as alarms and loud noise events to ensure immediate user attention.\newline
+Several improvements were introduced to enhance the reliability and usability of the sound recognition subsystem. Confidence-based filtering was applied so that low-confidence predictions were suppressed, reducing unnecessary false alerts. Priority handling was also introduced for critical sound classes such as alarms and loud noise events to ensure immediate user attention. \newline
 
 \noindent
-The recognition outputs were further synchronized with the speech-to-text subsystem to avoid conflicts between speech captions and environmental sound notifications. Additional practical sound categories, including loud noise events, were integrated into the displayed alerts to improve real-world usefulness.\newline
-
-\noindent
-To improve user interaction, sound recognition outputs were integrated with the updated visual interface, where detected sounds were clearly displayed together with sound direction, confidence indication, and live speech captions in real time.
+The recognition outputs were further synchronized with the speech-to-text subsystem to avoid conflicts between speech captions and environmental sound notifications. Additional practical sound categories, including loud noise events, were integrated into the displayed alerts to improve real-world usefulness. To improve user interaction, sound recognition outputs were integrated with the updated visual interface, where detected sounds were clearly displayed together with sound direction, confidence indication, and live speech captions in real time.
 
 \subsubsection{Speech To Text}
 The Speech-to-Text subsystem performance was tested manually with over 60 case-tests in Arabic and English. These test cases had general conversations, frequently used phrases, and real-life communication situations to mimic real-life usage conditions, in addition to audio recordings such as conversations or podcast-style audio.\newline
@@ -911,10 +897,7 @@ A few improvements were made to increase usability and system reliability. To in
 Several improvements were applied to enhance the usability and clarity of the interface.
 These include refining the layout for better readability, improving synchronization
 between system outputs, and enhancing the visualization of sound direction using
-both angular values and intuitive directional labels.\newline
-
-\noindent
-These optimizations improved user interaction, reduced visual clutter, and ensured
+both angular values and intuitive directional labels. Finally, these optimizations improved user interaction, reduced visual clutter, and ensured
 more effective real-time feedback.
 % =================================د
 \newpage
@@ -1005,21 +988,21 @@ Lastly, the performance of a system is measured in terms of set measures. These 
 \subsection{Engineering Considerations}
 \subsubsection{Relevant Ethical Aspects and Codes of Ethics}
 
-The development of the Sound-Based Scene Descriptor is guided by the IEEE Code of Ethics~\cite{ieee_p78}, with a focus on public safety, technical honesty, and professional competence.
+The Sound-Based Scene Descriptor is developed in alignment with the IEEE Code of Ethics~\cite{ieee_p78}, ensuring a strong commitment to public safety, technical integrity, and professional competence.
 
-\paragraph{\textbf{IEEE Code 1 (Public Safety and Welfare):}}
+\paragraph{\textbf{IEEE Code 1 (Public Safety and Welfare)\\}}
 The system is designed with safety as a primary objective, ensuring that critical environmental sounds (e.g., sirens or vehicle horns) are detected and localized as reliably as possible. Since incorrect directional feedback may introduce physical risk, the design prioritizes the All-Features fusion model to maximize robustness in real-world environments. Additionally, privacy is considered by performing core audio processing (feature extraction and localization) locally on-device. Only high-level outputs (e.g., detected sound labels and direction) are transmitted to the user interface, avoiding storage or transmission of raw audio data.
 
-\paragraph{\textbf{IEEE Code 4 (Societal Impact and Public Understanding):}}
+\paragraph{\textbf{IEEE Code 4 (Societal Impact and Public Understanding)\\}}
 The system contributes to improving public understanding of emerging technologies by translating advanced AI methods (e.g., CNN-based sound classification, YAMNet, and GCC-PHAT localization) into a practical assistive application. The system integrates a custom web-based interface to visualize sound direction and transcribed speech in real time, enhancing usability and accessibility. The design process included consultation with domain specialists at the Sheikh Salem Al-Ali Al-Sabah Centre, ensuring that the system addresses real user needs and delivers meaningful societal impact.
 
-\paragraph{\textbf{IEEE Code 5 (Honest and Realistic Claims):}}
+\paragraph{\textbf{IEEE Code 5 (Honest and Realistic Claims)\\}}
 The team maintains transparency in performance reporting. While near-perfect accuracy is achieved under controlled conditions (Scenario 1), the system is evaluated primarily on realistic, unseen environments (Scenario 2), where it achieves 88.05\% accuracy with an average localization error of 8.9°. This prevents overestimation and provides a truthful assessment of system readiness.
 
-\paragraph{\textbf{IEEE Code 6 (Professional Competence):}}
+\paragraph{\textbf{IEEE Code 6 (Professional Competence)\\}}
 All technical decisions were guided by empirical validation rather than assumptions. For example, the selection of a 16\,ms frame size was based on real-time deployment constraints of the ReSpeaker XVF3800 pipeline, ensuring consistency between training and inference. Hardware limitations were also explicitly considered, leading to a hybrid implementation where computationally intensive training is performed on GPU-capable systems, while real-time inference and visualization are deployed on the Raspberry Pi and connected interface.
 
-\paragraph{\textbf{IEEE Code 7 (Fairness and Non-Discrimination):}}
+\paragraph{\textbf{IEEE Code 7 (Fairness and Non-Discrimination)\\}}
 The project promotes accessibility by supporting individuals with hearing impairments, enabling equal environmental awareness. To further ensure inclusivity, the system incorporates Arabic and Kuwaiti dialect speech-to-text capabilities, addressing a common limitation in assistive technologies that predominantly support English, and reducing barriers for non-English-speaking users within the local community.
 
 \subsubsection{Impact of Proposed Solution}
@@ -1071,8 +1054,8 @@ At the beginning of GP2, the project team established a structured schedule to c
 \label{fig:gantt_gp2}
 \end{figure}
 
-\indentThe
-first phase focused on reviewing the GP1 outcomes, refining project objectives, and confirming the final system architecture. During this stage, the team finalized the integration of the three main subsystems: sound recognition, sound source localization, and speech-to-text transcription, along with the wearable hardware setup using Raspberry Pi and microphone array components.\newline
+\indent
+The first phase focused on reviewing the GP1 outcomes, refining project objectives, and confirming the final system architecture. During this stage, the team finalized the integration of the three main subsystems: sound recognition, sound source localization, and speech-to-text transcription, along with the wearable hardware setup using Raspberry Pi and microphone array components.\newline
 
 \noindent
 The second phase focused on technical implementation. Team members worked in parallel on their assigned modules. The sound recognition subsystem was implemented using the YAMNet model for environmental sound classification. The localization subsystem was developed and trained using microphone-array audio data and machine learning techniques for direction estimation. The speech-to-text subsystem was implemented and evaluated using both Faster-Whisper and Google Speech-to-Text models, where Google STT was selected for final deployment due to its higher accuracy and stability. In parallel, a web-based user interface was designed and implemented, including Detailed and Light modes for presenting sound labels, direction indicators, and live speech captions.\newline
@@ -1097,7 +1080,7 @@ Time management was another challenge due to simultaneous deadlines for experime
 Students were assigned tasks from different parts of the project work based on the system modules to ensure effective distribution of the team's effort and to advance the project in GP1 and GP2. Each team member was in charge of a technical aspect of the project in addition to taking part in report preparation, discussions, and project development.\newline
 
 \noindent
-The main work on the sound source localization module was carried out by Reemas Alsubaiei and Farah Alhayek. They were involved in researching and choosing the right localization techniques (such as GCC-PHAT and TDOA) and also studying how the ReSpeaker 4-Microphone Array can be used to accurately detect the direction of sound. They also worked on assessing the localization accuracy and the desired requirements for the angle error and accuracy of the response.\newline
+The main work on the sound source localization module was carried out by Reemas Alsubaiei and Farah Alhayek. Their contributions included testing and selecting appropriate acoustic features, such as GCC-PHAT TDOA, GCC strength, inter-channel phase difference (IPD), and log-mel spectrograms, as well as studying the use of the ReSpeaker 4-Microphone Array for accurate directional sound detection. In addition, they trained and evaluated deep learning models—specifically a CNN and a GRU—to classify the direction of incoming sound signals across 24 azimuth angles. They also assessed the localization performance in terms of angular error and overall classification accuracy to ensure the system meets the required performance targets.\newline
 
 \noindent
 Mariam Alsahhaf primarily worked on the environmental sound recognition module. She investigated different sound event detection techniques, selected the YAMNet model for environmental sound classification, and studied how critical sounds can be accurately detected. Additionally, she contributed to the design and implementation of the system’s web-based user interface, ensuring clear visualization of sound labels, direction, and speech captions.\newline
@@ -1161,8 +1144,8 @@ Building on the current system, the following directions are identified for furt
 
 
 % =================================
-\newpage
-\section{APPENDICES}
+%\newpage
+%\section{APPENDICES}
 % Appendices content
 
 \end{document}

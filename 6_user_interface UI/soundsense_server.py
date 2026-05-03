@@ -361,65 +361,64 @@ def yamnet_thread(stop_event: threading.Event):
 
     print('[YAMNet] Stopped.')
 
-# ── 4. STT thread  (transcript_ts added) ───────────────────────────────────────
-STT_CHUNK_SEC    = 1.2
-STT_OVERLAP_SEC  = 0.3
-STT_CHUNK_SAMP   = int(STT_CHUNK_SEC   * RATE)
-STT_OVERLAP_SAMP = int(STT_OVERLAP_SEC * RATE)
-STT_LANG         = 'ar-KW'   # change to 'en-US' for English
+# ── 4. STT thread  (google-cloud-speech streaming) ─────────────────────────────
+STT_LANG = 'ar-KW'   # change to 'en-US' for English
 
-def _merge_text(old: str, new: str) -> str:
-    old_w = old.strip().split()
-    new_w = new.strip().split()
-    if not old_w:
-        return new + ' '
-    for i in range(min(len(old_w), len(new_w)), 0, -1):
-        if old_w[-i:] == new_w[:i]:
-            return ' '.join(old_w + new_w[i:]) + ' '
-    return old.strip() + ' ' + new + ' '
-
-def stt_thread(stop_event: threading.Event):
-    try:
-        import speech_recognition as sr
-    except ImportError:
-        print('[STT] speech_recognition not installed — skipping.')
-        return
-
-    recognizer = sr.Recognizer()
-    audio_buf  = np.array([], dtype=np.float32)
-    transcript = ''
-    print(f'[STT] Ready — language={STT_LANG}  chunk={STT_CHUNK_SEC}s  overlap={STT_OVERLAP_SEC}s')
-
+def _audio_generator(stop_event: threading.Event):
     while not stop_event.is_set():
         try:
             blk = _stt_q.get(timeout=0.5)
         except queue.Empty:
             continue
+        pcm = blk[:, YAMNET_CH_A].astype(np.int16).tobytes()
+        yield pcm
 
-        ch1 = blk[:, YAMNET_CH_A].astype(np.float32) / 32768.0
-        audio_buf = np.concatenate([audio_buf, ch1])
+def stt_thread(stop_event: threading.Event):
+    try:
+        from google.cloud import speech as gc_speech
+    except ImportError:
+        print('[STT] google-cloud-speech not installed — skipping.')
+        return
 
-        if len(audio_buf) < STT_CHUNK_SAMP:
-            continue
+    print(f'[STT] Ready — language={STT_LANG}  (google-cloud-speech streaming)')
 
-        chunk     = audio_buf[:STT_CHUNK_SAMP]
-        audio_buf = audio_buf[STT_CHUNK_SAMP - STT_OVERLAP_SAMP:]
+    config = gc_speech.RecognitionConfig(
+        encoding=gc_speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=RATE,
+        language_code=STT_LANG,
+        enable_automatic_punctuation=True,
+    )
+    streaming_config = gc_speech.StreamingRecognitionConfig(
+        config=config,
+        interim_results=True,
+    )
 
-        audio_int16  = (np.clip(chunk, -1.0, 1.0) * 32767).astype(np.int16)
-        google_audio = sr.AudioData(audio_int16.tobytes(), RATE, 2)
+    client     = gc_speech.SpeechClient()
+    transcript = ''
 
-        try:
-            text = recognizer.recognize_google(google_audio, language=STT_LANG).strip()
-            if text:
-                transcript = _merge_text(transcript, text)
-                if len(transcript) > 200:
-                    transcript = transcript[-200:]
-                # Include transcript_ts so the frontend can auto-clear after silence
-                _update(transcript=transcript.strip(), transcript_ts=time.time())
-        except sr.UnknownValueError:
-            pass
-        except sr.RequestError as e:
-            print(f'[STT] Google STT error: {e}')
+    def _make_requests():
+        for pcm in _audio_generator(stop_event):
+            yield gc_speech.StreamingRecognizeRequest(audio_content=pcm)
+
+    try:
+        responses = client.streaming_recognize(streaming_config, _make_requests())
+        for response in responses:
+            if stop_event.is_set():
+                break
+            for result in response.results:
+                text = result.alternatives[0].transcript.strip()
+                if not text:
+                    continue
+                if result.is_final:
+                    transcript = (transcript + ' ' + text).strip()
+                    if len(transcript) > 200:
+                        transcript = transcript[-200:]
+                    _update(transcript=transcript, transcript_ts=time.time())
+                else:
+                    _update(transcript=(transcript + ' ' + text).strip(),
+                            transcript_ts=time.time())
+    except Exception as e:
+        print(f'[STT] Error: {e}')
 
     print('[STT] Stopped.')
 
