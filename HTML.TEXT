@@ -1,0 +1,384 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:#f0f2f8;padding:14px}
+
+.top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.app-title{font-size:20px;font-weight:700;color:#1a1a2e}
+.app-sub{font-size:11px;color:#aaa;margin-top:1px;letter-spacing:.5px}
+.right-top{display:flex;align-items:center;gap:8px}
+.live-pill{display:flex;align-items:center;gap:5px;background:#e6f9f0;border:0.5px solid #a3dfc0;border-radius:20px;padding:5px 13px;font-size:12px;color:#1a7a4a;font-weight:600}
+.live-dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.mode-toggle{display:flex;background:#fff;border:0.5px solid #dde0ea;border-radius:20px;padding:3px}
+.mode-btn{font-size:12px;font-weight:600;padding:5px 16px;border-radius:16px;border:none;cursor:pointer;background:transparent;color:#999;transition:all 0.2s}
+.mode-btn.active{background:#1a1a2e;color:#fff}
+
+.view{display:none}.view.visible{display:block}
+
+/* ── DETAILED ── */
+.d-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.card{background:#fff;border:0.5px solid #e4e7f2;border-radius:16px;padding:16px}
+.card-label{font-size:10px;font-weight:700;color:#bbb;letter-spacing:1.4px;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.ldot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* Sound card */
+.snd-name{font-size:38px;font-weight:700;color:#1a1a2e;line-height:1;margin-bottom:4px}
+.snd-desc{font-size:13px;color:#888;margin-bottom:14px}
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.bar-lbl{font-size:14px;color:#555;width:90px;flex-shrink:0;font-weight:500}
+.bar-track{flex:1;height:10px;background:#f0f1f7;border-radius:5px;overflow:hidden}
+.bar-fill{height:100%;border-radius:5px;transition:width 0.5s ease}
+.bar-pct{font-size:13px;color:#999;width:36px;text-align:right;font-weight:500;font-variant-numeric:tabular-nums}
+
+/* Compass card */
+.compass-wrap{display:flex;gap:16px;align-items:center}
+.compass-ring{position:relative;width:152px;height:152px;flex-shrink:0;border-radius:50%;border:2px solid #e0e4f0;background:#f8f9fc}
+/* degree tick marks */
+.compass-ring::before{content:'';position:absolute;inset:6px;border-radius:50%;border:1px dashed #eaedf5}
+.c-lbl{position:absolute;font-size:10px;color:#bbb;font-weight:700;line-height:1}
+.c-n{top:6px;left:50%;transform:translateX(-50%)}
+.c-s{bottom:6px;left:50%;transform:translateX(-50%)}
+.c-e{right:7px;top:50%;transform:translateY(-50%)}
+.c-w{left:7px;top:50%;transform:translateY(-50%)}
+/* diagonal labels */
+.c-lbl.c-nw{top:20px;left:18px;font-size:9px;color:#d0d4e4}
+.c-lbl.c-ne{top:20px;right:18px;font-size:9px;color:#d0d4e4}
+.c-lbl.c-sw{bottom:20px;left:18px;font-size:9px;color:#d0d4e4}
+.c-lbl.c-se{bottom:20px;right:18px;font-size:9px;color:#d0d4e4}
+.c-arrow{position:absolute;left:50%;bottom:50%;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:56px solid #378ADD;transform-origin:50% 100%;margin-left:-6px;transition:transform 0.7s cubic-bezier(.34,1.56,.64,1);filter:drop-shadow(0 2px 4px rgba(55,138,221,0.4))}
+.c-center{position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;border:2.5px solid #378ADD;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2}
+/* angle readout beside compass */
+.angle-readout{display:flex;flex-direction:column;gap:10px;flex:1}
+.angle-big{font-size:52px;font-weight:700;color:#378ADD;line-height:1;font-variant-numeric:tabular-nums}
+.angle-deg-label{font-size:13px;color:#aaa;font-weight:600;letter-spacing:.5px;margin-top:-4px}
+.dir-pill{display:inline-flex;align-items:center;gap:6px;background:#eaf3fd;border:1px solid #b8d6f5;border-radius:20px;padding:6px 14px;margin-top:4px}
+.dir-pill-arrow{font-size:16px}
+.dir-pill-text{font-size:15px;font-weight:700;color:#2266aa}
+.dir-hint-small{font-size:12px;color:#aaa;margin-top:6px;line-height:1.4}
+
+/* Speech card */
+.speech-card{background:#fff;border:0.5px solid #e4e7f2;border-radius:16px;padding:16px;margin-bottom:12px}
+.cap-box{background:#f5f6fb;border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.cap-text{font-size:23px;font-weight:400;color:#1a1a2e;line-height:1.45}
+.cap-text .fresh{color:#1a7a4a;font-weight:600}
+.blink{display:inline-block;width:2.5px;height:23px;background:#1a7a4a;vertical-align:middle;margin-left:2px;animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+.hist-label{font-size:10px;font-weight:700;color:#ccc;letter-spacing:1.3px;text-transform:uppercase;margin-bottom:5px}
+.hist-row{font-size:13px;color:#bbb;padding:4px 0;border-bottom:0.5px solid #f0f1f7;font-style:italic}
+.hist-row:last-child{border-bottom:none}
+
+.alert-strip{background:#fff5f5;border:0.5px solid #f5b8b8;border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:12px}
+.alert-icon-wrap{width:30px;height:30px;border-radius:50%;background:#e24b4a;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.alert-icon-wrap svg{width:15px;height:15px;fill:#fff}
+.alert-msg{font-size:15px;font-weight:700;color:#a32d2d}
+.alert-hint{font-size:12px;color:#c05050;margin-top:2px}
+
+/* ── LIGHT VIEW ── */
+.l-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.light-card{background:#fff;border:0.5px solid #e4e7f2;border-radius:16px;padding:18px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.light-icon-circle{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:10px}
+.light-icon-circle svg{width:28px;height:28px}
+.light-main{font-size:34px;font-weight:700;color:#1a1a2e;line-height:1;margin-bottom:4px}
+.light-sub{font-size:13px;color:#999}
+
+/* light compass */
+.light-compass-wrap{display:flex;flex-direction:column;align-items:center;width:100%}
+.light-compass-ring{position:relative;width:120px;height:120px;border-radius:50%;border:2px solid #e0e4f0;background:#f8f9fc;margin-bottom:10px}
+.light-compass-ring::before{content:'';position:absolute;inset:5px;border-radius:50%;border:1px dashed #eaedf5}
+.lc-lbl{position:absolute;font-size:10px;color:#bbb;font-weight:700}
+.lc-n{top:4px;left:50%;transform:translateX(-50%)}
+.lc-s{bottom:4px;left:50%;transform:translateX(-50%)}
+.lc-e{right:5px;top:50%;transform:translateY(-50%)}
+.lc-w{left:5px;top:50%;transform:translateY(-50%)}
+.lc-arrow{position:absolute;left:50%;bottom:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:42px solid #378ADD;transform-origin:50% 100%;margin-left:-5px;transition:transform 0.7s cubic-bezier(.34,1.56,.64,1);filter:drop-shadow(0 2px 3px rgba(55,138,221,0.4))}
+.lc-center{position:absolute;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #378ADD;left:50%;top:50%;transform:translate(-50%,-50%)}
+.light-angle{font-size:40px;font-weight:700;color:#378ADD;line-height:1;margin-bottom:2px;font-variant-numeric:tabular-nums}
+.light-dir-pill{display:inline-flex;align-items:center;gap:5px;background:#eaf3fd;border:1px solid #b8d6f5;border-radius:20px;padding:4px 12px;margin-top:4px}
+.light-dir-text{font-size:13px;font-weight:700;color:#2266aa}
+
+.light-caption-card{background:#fff;border:0.5px solid #e4e7f2;border-radius:16px;padding:18px;margin-bottom:12px}
+.light-cap-label{font-size:10px;font-weight:700;color:#bbb;letter-spacing:1.4px;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.light-cap-text{font-size:30px;font-weight:400;color:#1a1a2e;line-height:1.4}
+.light-cap-text .fresh{color:#1a7a4a;font-weight:600}
+</style>
+
+<div class="top-bar">
+  <div>
+    <div class="app-title">SoundSense</div>
+    <div class="app-sub">ReSpeaker 360 · Real-time Assistive Interface</div>
+  </div>
+  <div class="right-top">
+    <div class="mode-toggle">
+      <button class="mode-btn active" onclick="setMode('detailed')">Detailed</button>
+      <button class="mode-btn" onclick="setMode('light')">Light</button>
+    </div>
+    <div class="live-pill"><span class="live-dot"></span> Live</div>
+  </div>
+</div>
+
+<!-- ══════════════ DETAILED ══════════════ -->
+<div class="view visible" id="view-detailed">
+  <div class="d-grid">
+
+    <!-- Sound Recognition -->
+    <div class="card">
+      <div class="card-label"><span class="ldot" id="d-ldot"></span>What is that sound?</div>
+      <div class="snd-name" id="d-snd-name"></div>
+      <div class="snd-desc" id="d-snd-desc"></div>
+      <div class="bar-row"><span class="bar-lbl" id="d-bl0"></span><div class="bar-track"><div class="bar-fill" id="d-b0"></div></div><span class="bar-pct" id="d-p0"></span></div>
+      <div class="bar-row"><span class="bar-lbl" id="d-bl1"></span><div class="bar-track"><div class="bar-fill" id="d-b1" style="background:#dde0ea"></div></div><span class="bar-pct" id="d-p1"></span></div>
+      <div class="bar-row"><span class="bar-lbl" id="d-bl2">Loud noise</span><div class="bar-track"><div class="bar-fill" id="d-b2" style="background:#dde0ea"></div></div><span class="bar-pct" id="d-p2"></span></div>
+    </div>
+
+    <!-- Localization -->
+    <div class="card">
+      <div class="card-label"><span class="ldot" style="background:#378ADD"></span>Where is the sound coming from?</div>
+      <div class="compass-wrap">
+        <div class="compass-ring" id="d-ring">
+          <span class="c-lbl c-n">Front</span>
+          <span class="c-lbl c-s">Back</span>
+          <span class="c-lbl c-e">Right</span>
+          <span class="c-lbl c-w">Left</span>
+          <span class="c-lbl c-nw">Front-left</span>
+          <span class="c-lbl c-ne">Front-right</span>
+          <span class="c-lbl c-sw">Back-left</span>
+          <span class="c-lbl c-se">Back-right</span>
+          <div class="c-arrow" id="d-arrow"></div>
+          <div class="c-center"></div>
+        </div>
+        <div class="angle-readout">
+          <div>
+            <div class="angle-big" id="d-angle">0°</div>
+            <div class="angle-deg-label">DOA ANGLE</div>
+          </div>
+          <div class="dir-pill">
+            <span class="dir-pill-arrow" id="d-dir-emoji">⬆️</span>
+            <span class="dir-pill-text" id="d-dir-word">Front</span>
+          </div>
+          <div class="dir-hint-small" id="d-dir-hint">Sound is coming from in front of you</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Speech -->
+  <div class="speech-card">
+    <div class="card-label"><span class="ldot" style="background:#1D9E75"></span>What is being said?</div>
+    <div class="cap-box">
+      <div class="cap-text" id="d-caption"></div>
+    </div>
+    <div class="hist-label">Earlier</div>
+    <div><div class="hist-row" id="d-h1"></div><div class="hist-row" id="d-h2"></div></div>
+  </div>
+
+  <div class="alert-strip" id="d-alert" style="display:none">
+    <div class="alert-icon-wrap"><svg viewBox="0 0 24 24"><path d="M12 2L2 20h20L12 2zm0 4l7 12H5l7-12zm-1 5v4h2v-4h-2zm0 5v2h2v-2h-2z"/></svg></div>
+    <div>
+      <div class="alert-msg" id="d-alert-msg"></div>
+      <div class="alert-hint" id="d-alert-hint"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ LIGHT ══════════════ -->
+<div class="view" id="view-light">
+  <div class="l-grid">
+
+    <!-- Sound -->
+    <div class="light-card">
+      <div class="light-icon-circle" id="l-icon-circle">
+        <svg id="l-icon-svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+      </div>
+      <div class="light-main" id="l-snd-name"></div>
+      <div class="light-sub" id="l-snd-desc"></div>
+    </div>
+
+    <!-- Direction -->
+    <div class="light-card">
+      <div class="light-compass-wrap">
+        <div class="light-compass-ring">
+          <span class="lc-lbl lc-n">Front</span>
+          <span class="lc-lbl lc-s">Back</span>
+          <span class="lc-lbl lc-e">Right</span>
+          <span class="lc-lbl lc-w">Left</span>
+          <div class="lc-arrow" id="l-arrow"></div>
+          <div class="lc-center"></div>
+        </div>
+        <div class="light-angle" id="l-angle">0°</div>
+        <div class="light-dir-pill">
+          <span id="l-dir-emoji">⬆️</span>
+          <span class="light-dir-text" id="l-dir-word">Front</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Caption only — no history -->
+  <div class="light-caption-card">
+    <div class="light-cap-label"><span class="ldot" style="background:#1D9E75"></span>What is being said?</div>
+    <div class="light-cap-text" id="l-caption"></div>
+  </div>
+
+  <div class="alert-strip" id="l-alert" style="display:none">
+    <div class="alert-icon-wrap"><svg viewBox="0 0 24 24"><path d="M12 2L2 20h20L12 2zm0 4l7 12H5l7-12zm-1 5v4h2v-4h-2zm0 5v2h2v-2h-2z"/></svg></div>
+    <div>
+      <div class="alert-msg" id="l-alert-msg"></div>
+      <div class="alert-hint" id="l-alert-hint"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Direction lookup ───────────────────────────────────────────────────────────
+const DIR_MAP = {
+    0:   {emoji:'⬆️', word:'Front',       hint:'Sound is coming from in front of you'},
+   45:   {emoji:'↗️', word:'Front-right',  hint:'Sound is coming from your front-right'},
+   90:   {emoji:'➡️', word:'Right',        hint:'Sound is coming from your right'},
+  135:   {emoji:'↘️', word:'Back-right',   hint:'Sound is coming from your back-right'},
+  180:   {emoji:'⬇️', word:'Behind',       hint:'Sound is coming from behind you'},
+  225:   {emoji:'↙️', word:'Back-left',    hint:'Sound is coming from your back-left'},
+  270:   {emoji:'⬅️', word:'Left',         hint:'Sound is coming from your left'},
+  315:   {emoji:'↖️', word:'Front-left',   hint:'Sound is coming from your front-left'},
+};
+
+function angleToDir(deg) {
+  const snap = Math.round(deg / 45) * 45 % 360;
+  return DIR_MAP[snap] || DIR_MAP[0];
+}
+
+// ── Sound colour + icon ────────────────────────────────────────────────────────
+const ALERT_KEYWORDS = ['siren','alarm','smoke detector','fire alarm','buzzer',
+                        'emergency','ambulance','fire engine','police car','civil defense'];
+
+function soundColor(label, isAlert) {
+  const l = label.toLowerCase();
+  if (isAlert)                                    return '#e24b4a';
+  if (l.includes('speech') || l.includes('voice') || l.includes('talk') || l.includes('shout')) return '#1D9E75';
+  if (l.includes('music') || l.includes('song'))  return '#9B59B6';
+  if (l.includes('knock') || l.includes('door'))  return '#378ADD';
+  return '#5B7FBF';
+}
+
+function soundIcon(label, isAlert) {
+  const l = label.toLowerCase();
+  if (isAlert)
+    return {bg:'#fff5f5',border:'#f5b8b8',stroke:'#e24b4a',
+      path:'<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'};
+  if (l.includes('speech') || l.includes('voice') || l.includes('talk'))
+    return {bg:'#e6f9f0',border:'#a3dfc0',stroke:'#1D9E75',
+      path:'<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>'};
+  if (l.includes('music') || l.includes('song'))
+    return {bg:'#f3e6fb',border:'#d4a3f5',stroke:'#9B59B6',
+      path:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'};
+  if (l.includes('knock') || l.includes('door'))
+    return {bg:'#e6f1fb',border:'#b5d4f4',stroke:'#378ADD',
+      path:'<rect x="3" y="3" width="18" height="18" rx="3"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/>'};
+  // default — speaker wave
+  return {bg:'#eef0f8',border:'#c8cde0',stroke:'#5B7FBF',
+    path:'<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>'};
+}
+
+// ── DOM update ─────────────────────────────────────────────────────────────────
+function renderLive(data) {
+  const d   = angleToDir(data.angle);
+  const col = soundColor(data.sound_label, data.is_alert);
+  const ico = soundIcon(data.sound_label, data.is_alert);
+  const scores = data.sound_scores || [];
+
+  // ── Detailed view ──────────────────────────────────────────────────────────
+  document.getElementById('d-ldot').style.background = col;
+  document.getElementById('d-snd-name').textContent  = data.sound_label;
+  document.getElementById('d-snd-desc').textContent  =
+    data.confidence > 0 ? `${data.confidence.toFixed(1)}% confidence · DOA` : '';
+
+  [0,1,2].forEach(i => {
+    const s = scores[i];
+    const pct = s ? Math.round(s.score * 100) : 0;
+    const lbl = s ? s.label : '—';
+    const el_lbl = document.getElementById('d-bl' + i);
+    const el_bar = document.getElementById('d-b'  + i);
+    const el_pct = document.getElementById('d-p'  + i);
+    if (el_lbl) el_lbl.textContent       = lbl;
+    if (el_bar) { el_bar.style.width     = pct + '%';
+                  el_bar.style.background = i === 0 ? col : '#dde0ea'; }
+    if (el_pct) el_pct.textContent       = pct + '%';
+  });
+
+  document.getElementById('d-arrow').style.transform = 'rotate(' + data.angle + 'deg)';
+  document.getElementById('d-angle').textContent      = data.angle + '°';
+  document.getElementById('d-dir-emoji').textContent  = d.emoji;
+  document.getElementById('d-dir-word').textContent   = d.word;
+  document.getElementById('d-dir-hint').textContent   = d.hint;
+
+  // speech / transcript (STT — filled in later)
+  if (data.transcript) {
+    const cap = document.getElementById('d-caption');
+    cap.innerHTML = data.transcript + '<span class="blink"></span>';
+  }
+
+  const da = document.getElementById('d-alert');
+  if (data.is_alert) {
+    da.style.display = 'flex';
+    document.getElementById('d-alert-msg').textContent  = data.alert_msg;
+    document.getElementById('d-alert-hint').textContent = data.alert_hint;
+  } else {
+    da.style.display = 'none';
+  }
+
+  // ── Light view ─────────────────────────────────────────────────────────────
+  const ic = document.getElementById('l-icon-circle');
+  ic.style.background = ico.bg;
+  ic.style.border     = '0.5px solid ' + ico.border;
+  const sv = document.getElementById('l-icon-svg');
+  sv.setAttribute('stroke', ico.stroke);
+  sv.innerHTML = ico.path;
+
+  document.getElementById('l-snd-name').textContent = data.sound_label;
+  document.getElementById('l-snd-desc').textContent = scores[0]
+    ? Math.round(scores[0].score * 100) + '% confidence' : '';
+
+  document.getElementById('l-arrow').style.transform = 'rotate(' + data.angle + 'deg)';
+  document.getElementById('l-angle').textContent     = data.angle + '°';
+  document.getElementById('l-dir-emoji').textContent = d.emoji;
+  document.getElementById('l-dir-word').textContent  = d.word;
+
+  if (data.transcript) {
+    document.getElementById('l-caption').innerHTML =
+      data.transcript + '<span class="blink"></span>';
+  }
+
+  const la = document.getElementById('l-alert');
+  if (data.is_alert) {
+    la.style.display = 'flex';
+    document.getElementById('l-alert-msg').textContent  = data.alert_msg;
+    document.getElementById('l-alert-hint').textContent = data.alert_hint;
+  } else {
+    la.style.display = 'none';
+  }
+}
+
+// ── Mode toggle ────────────────────────────────────────────────────────────────
+function setMode(m) {
+  document.getElementById('view-detailed').classList.toggle('visible', m === 'detailed');
+  document.getElementById('view-light').classList.toggle('visible',    m === 'light');
+  document.querySelectorAll('.mode-btn').forEach(
+    b => b.classList.toggle('active', b.textContent.toLowerCase() === m)
+  );
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────────────────
+(function connect() {
+  const ws = new WebSocket('ws://' + location.host + '/ws');
+
+  ws.onmessage = e => {
+    try { renderLive(JSON.parse(e.data)); }
+    catch (_) {}
+  };
+
+  ws.onclose = () => setTimeout(connect, 2000);   // auto-reconnect
+  ws.onerror = () => ws.close();
+})();
+</script>

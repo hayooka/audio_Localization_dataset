@@ -1,0 +1,67 @@
+Sequence GRU ALL-features model
+Best epoch: 21
+Best validation accuracy: 99.16%
+Test accuracy: 99.19%
+MAE: 0.5 deg
+RMSE: 7.4 deg
+
+{
+  "seq_len": 32,
+  "stride": 16,
+  "eval_stride": 32,
+  "embed_dim": 256,
+  "hidden_dim": 128,
+  "layers": 1,
+  "dropout": 0.2,
+  "lr": 0.0005,
+  "weight_decay": 0.0005,
+  "label_smoothing": 0.03,
+  "batch_size": 256,
+  "eval_batch_size": 512,
+  "epochs": 50,
+  "patience": 8,
+  "print_every": 5,
+  "grad_clip": 1.0,
+  "rms_threshold": 50.0,
+  "strict_consecutive": true,
+  "split_mode": "audio2_val_test",
+  "audio1_val_seconds": 30.0,
+  "audio1_val_block": "end",
+  "max_train_per_class": 0,
+  "max_val_per_class": 0,
+  "max_test_per_class": 0,
+  "shuffle_train_labels": false,
+  "shuffle_test_labels": false,
+  "run_id": "20260429_081236"
+}
+
+              precision    recall  f1-score   support
+
+        0deg       1.00      1.00      1.00       208
+       15deg       1.00      1.00      1.00       215
+       30deg       1.00      0.96      0.98       203
+       45deg       1.00      1.00      1.00       228
+       60deg       1.00      1.00      1.00       230
+       75deg       1.00      0.98      0.99       193
+       90deg       0.99      1.00      1.00       221
+      105deg       0.94      1.00      0.97       235
+      120deg       1.00      1.00      1.00       209
+      135deg       1.00      1.00      1.00       235
+      150deg       1.00      0.97      0.99       212
+      165deg       1.00      1.00      1.00       226
+      180deg       1.00      1.00      1.00       213
+      195deg       0.89      0.99      0.94       164
+      210deg       1.00      0.97      0.98       235
+      225deg       1.00      0.99      0.99       231
+      240deg       1.00      0.98      0.99       185
+      255deg       1.00      1.00      1.00       234
+      270deg       1.00      1.00      1.00       235
+      285deg       0.99      1.00      1.00       224
+      300deg       1.00      1.00      1.00       187
+      315deg       1.00      0.99      0.99       208
+      330deg       1.00      0.99      1.00       232
+      345deg       1.00      1.00      1.00       227
+
+    accuracy                           0.99      5190
+   macro avg       0.99      0.99      0.99      5190
+weighted avg       0.99      0.99      0.99      5190

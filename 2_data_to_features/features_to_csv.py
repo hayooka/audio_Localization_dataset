@@ -29,7 +29,7 @@ DATASETS = {
     'DATA': r'C:\Users\ahmma\Desktop\farah\(24 angles)dataset',
 }
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.join(REPO_ROOT, 'features')
+OUTPUT_DIR = os.path.join(REPO_ROOT, '0_Dataset', 'features')
 
 ANGLES = list(range(0, 360, 15))
 MICS      = ['mic_right', 'mic_front', 'mic_left', 'mic_back']

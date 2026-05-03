@@ -93,6 +93,25 @@ audio_Localization_dataset/
 | S1 | 80% of 5 min | 20% of 5 min | Internal validation |
 | S2 | 80% of 5 min | 3 min (held-out) | Generalization to unseen speech |
 
+### Results — 16 ms chunks
+
+**Per-feature models (30 ms, S1 / S2):**
+
+| Feature Set | S1 Acc | S2 Acc | S2 MAE | S2 RMSE |
+|---|---|---|---|---|
+| GCC-TDOA | 99.83% | 90.10% | 7.8° | 30.2° |
+| GCC Strength | 99.71% | 89.44% | 8.7° | 32.3° |
+| IPD | 97.82% | 83.36% | 12.5° | 36.9° |
+| Log-Mel | 89.33% | 51.21% | 37.5° | 63.9° |
+| RMS | 20.94% | 16.10% | 70.4° | 89.9° |
+
+**ALL-features models (16 ms, cross-recording split):**
+
+| Model | Acc | MAE | RMSE |
+|---|---|---|---|
+| CNN (seq=2, 32ms context) | 83.04% | 12.4° | 37.1° |
+| GRU (seq=32, 512ms context) | 99.19% | 0.5° | 7.4° |
+
 ---
 
 ## Hardware
