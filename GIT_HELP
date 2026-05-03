@@ -1,6 +1,6 @@
 🧾 أبسط طريقة (كل شيء دفعة واحدة)
 git add .
-git commit -m "your message"
+git commit -m "ADD"
 git push
 
 
