@@ -297,8 +297,11 @@ def yamnet_thread(stop_event: threading.Event):
     print('[YAMNet] Stopped.')
 
 # ── 4. STT threads ─────────────────────────────────────────────────────────────
-STT_LANG       = 'ar-KW'   # change to 'en-US' for English
-STT_LANG_FREE  = 'ar-KW'   # language code for speech_recognition free API
+STT_LANG       = 'ar-KW'   # runtime-switchable via WebSocket set_lang message
+STT_LANG_FREE  = 'ar-KW'
+
+_stt_lang         = 'ar-KW'          # current language (shared, protected by _lock)
+_stt_lang_changed = threading.Event() # set when UI requests a language switch
 
 CHUNK_SEC     = 1.2        # seconds per free-STT chunk
 OVERLAP_SEC   = 0.3        # overlap between chunks to avoid cutting words
@@ -322,29 +325,34 @@ def stt_cloud_thread(stop_event: threading.Event):
         print('[STT-Cloud] google-cloud-speech not installed — skipping.')
         return
 
-    print(f'[STT-Cloud] Ready — language={STT_LANG}')
+    print(f'[STT-Cloud] Ready — language={_stt_lang}')
 
     client = gc_speech.SpeechClient()
-    config = gc_speech.RecognitionConfig(
-        encoding=gc_speech.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz=RATE,
-        language_code=STT_LANG,
-        enable_automatic_punctuation=True,
-    )
-    streaming_config = gc_speech.StreamingRecognitionConfig(
-        config=config, interim_results=True,
-    )
 
     while not stop_event.is_set():
+        _stt_lang_changed.clear()
+        lang = _stt_lang
+        config = gc_speech.RecognitionConfig(
+            encoding=gc_speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            sample_rate_hertz=RATE,
+            language_code=lang,
+            enable_automatic_punctuation=True,
+        )
+        streaming_config = gc_speech.StreamingRecognitionConfig(
+            config=config, interim_results=True,
+        )
+        print(f'[STT-Cloud] Streaming — language={lang}')
         transcript = ''
         try:
             def _make_requests():
                 for pcm in _audio_generator(stop_event):
+                    if _stt_lang_changed.is_set():
+                        return
                     yield gc_speech.StreamingRecognizeRequest(audio_content=pcm)
 
             responses = client.streaming_recognize(streaming_config, _make_requests())
             for response in responses:
-                if stop_event.is_set():
+                if stop_event.is_set() or _stt_lang_changed.is_set():
                     break
                 for result in response.results:
                     text = result.alternatives[0].transcript.strip()
@@ -359,7 +367,7 @@ def stt_cloud_thread(stop_event: threading.Event):
                         _update(transcript=(transcript + ' ' + text).strip(),
                                 transcript_ts=time.time())
         except Exception as e:
-            if not stop_event.is_set():
+            if not stop_event.is_set() and not _stt_lang_changed.is_set():
                 print(f'[STT-Cloud] Restarting after error: {e}')
                 time.sleep(1)
 
@@ -373,7 +381,7 @@ def stt_free_thread(stop_event: threading.Event):
         print('[STT-Free] speech_recognition not installed — run: pip install SpeechRecognition')
         return
 
-    print(f'[STT-Free] Ready — language={STT_LANG_FREE}  (free, chunked, no credentials)')
+    print(f'[STT-Free] Ready — language={_stt_lang}  (free, chunked, no credentials)')
 
     recognizer = sr.Recognizer()
     buf        = np.zeros(0, dtype=np.float32)
@@ -387,6 +395,12 @@ def stt_free_thread(stop_event: threading.Event):
 
     transcript = ''
     while not stop_event.is_set():
+        if _stt_lang_changed.is_set():
+            _stt_lang_changed.clear()
+            buf = np.zeros(0, dtype=np.float32)
+            transcript = ''
+            print(f'[STT-Free] Language switched to {_stt_lang}')
+
         try:
             blk = _stt_q.get(timeout=0.5)
         except queue.Empty:
@@ -398,7 +412,6 @@ def stt_free_thread(stop_event: threading.Event):
             continue
 
         chunk = buf[:CHUNK_SAMPLES_STT]
-        # keep overlap for next iteration
         buf   = buf[CHUNK_SAMPLES_STT - OVERLAP_SAMPLES:]
 
         audio_int16 = np.clip(chunk, -1.0, 1.0)
@@ -406,14 +419,14 @@ def stt_free_thread(stop_event: threading.Event):
         audio_data  = sr.AudioData(audio_bytes, RATE, 2)
 
         try:
-            text = recognizer.recognize_google(audio_data, language=STT_LANG_FREE).strip()
+            text = recognizer.recognize_google(audio_data, language=_stt_lang).strip()
             if text:
                 transcript = _merge(transcript, text)
                 if len(transcript) > 200:
                     transcript = transcript[-200:]
                 _update(transcript=transcript, transcript_ts=time.time())
         except sr.UnknownValueError:
-            pass   # silence or unintelligible
+            pass
         except Exception as e:
             if not stop_event.is_set():
                 print(f'[STT-Free] Error: {e}')
@@ -431,11 +444,28 @@ async def index():
 @app.websocket('/ws')
 async def ws_endpoint(ws: WebSocket):
     import asyncio, json
+    global _stt_lang
     await ws.accept()
     try:
-        while True:
-            await asyncio.sleep(0.1)
-            await ws.send_text(json.dumps(_snapshot()))
+        async def _sender():
+            while True:
+                await asyncio.sleep(0.1)
+                await ws.send_text(json.dumps(_snapshot()))
+
+        sender = asyncio.ensure_future(_sender())
+        try:
+            while True:
+                msg = await ws.receive_text()
+                try:
+                    data = json.loads(msg)
+                    if 'set_lang' in data:
+                        _stt_lang = data['set_lang']
+                        _stt_lang_changed.set()
+                        print(f'[STT] Language switched to {_stt_lang}')
+                except Exception:
+                    pass
+        finally:
+            sender.cancel()
     except WebSocketDisconnect:
         pass
 
