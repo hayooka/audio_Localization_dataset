@@ -652,7 +652,8 @@ if('serviceWorker' in navigator){
   const pill  = document.getElementById('conn-pill');
   const label = document.getElementById('conn-label');
 
-  const ws = new WebSocket('ws://' + location.host + '/ws');
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  const ws = new WebSocket(proto + location.host + '/ws');
 
   ws.onopen = () => {
     pill.classList.remove('disconnected');
