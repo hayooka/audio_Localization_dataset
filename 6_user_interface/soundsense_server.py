@@ -127,8 +127,11 @@ _state = {
     'alert_msg':    '',
     'alert_hint':   '',
     'transcript':   '',
-    'transcript_ts': 0.0,   # NEW: Unix timestamp of last STT update
+    'transcript_ts': 0.0,
 }
+
+# True when YAMNet detects speech — gates both STT threads
+_stt_active = threading.Event()
 
 def _update(**kwargs):
     with _lock:
@@ -280,10 +283,19 @@ def yamnet_thread(stop_event: threading.Event):
         if not scores_out:
             continue
 
-        top_label = scores_out[0]['label']
-        alert     = _is_alert(top_label)
+        top_label  = scores_out[0]['label']
+        alert      = _is_alert(top_label)
+        is_speech  = any(w in top_label.lower() for w in
+                         ('speech', 'voice', 'talk', 'shout', 'conversation',
+                          'singing', 'child', 'male', 'female', 'narration'))
 
-        print(f'[YAMNet] {top_label!r}  conf={scores_out[0]["score"]:.2f}')
+        # Gate STT — only run when speech is detected
+        if is_speech:
+            _stt_active.set()
+        else:
+            _stt_active.clear()
+
+        print(f'[YAMNet] {top_label!r}  conf={scores_out[0]["score"]:.2f}  stt={"ON" if is_speech else "off"}')
 
         _update(
             sound_label  = top_label,
@@ -310,6 +322,8 @@ def _audio_generator(stop_event: threading.Event):
             blk = _stt_q.get(timeout=0.5)
         except queue.Empty:
             continue
+        if not _stt_active.is_set():
+            continue   # drain queue silently when no speech detected
         pcm = blk[:, YAMNET_CH].astype(np.int16).tobytes()
         yield pcm
 
@@ -389,6 +403,10 @@ def stt_free_thread(stop_event: threading.Event):
         try:
             blk = _stt_q.get(timeout=0.5)
         except queue.Empty:
+            continue
+
+        if not _stt_active.is_set():
+            buf = np.zeros(0, dtype=np.float32)   # reset buffer during silence
             continue
 
         buf = np.append(buf, blk[:, YAMNET_CH].astype(np.float32) / 32768.0)
