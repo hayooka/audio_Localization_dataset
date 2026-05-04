@@ -295,8 +295,14 @@ def yamnet_thread(stop_event: threading.Event):
 
     print('[YAMNet] Stopped.')
 
-# ── 4. STT thread  (google-cloud-speech streaming) ─────────────────────────────
-STT_LANG = 'ar-KW'   # change to 'en-US' for English
+# ── 4. STT threads ─────────────────────────────────────────────────────────────
+STT_LANG       = 'ar-KW'   # change to 'en-US' for English
+STT_LANG_FREE  = 'ar-KW'   # language code for speech_recognition free API
+
+CHUNK_SEC     = 1.2        # seconds per free-STT chunk
+OVERLAP_SEC   = 0.3        # overlap between chunks to avoid cutting words
+CHUNK_SAMPLES_STT  = int(CHUNK_SEC * RATE)
+OVERLAP_SAMPLES    = int(OVERLAP_SEC * RATE)
 
 def _audio_generator(stop_event: threading.Event):
     while not stop_event.is_set():
@@ -307,14 +313,15 @@ def _audio_generator(stop_event: threading.Event):
         pcm = blk[:, YAMNET_CH].astype(np.int16).tobytes()
         yield pcm
 
-def stt_thread(stop_event: threading.Event):
+# ── 4a. Paid STT — Google Cloud Speech streaming ────────────────────────────────
+def stt_cloud_thread(stop_event: threading.Event):
     try:
         from google.cloud import speech as gc_speech
     except ImportError:
-        print('[STT] google-cloud-speech not installed — skipping.')
+        print('[STT-Cloud] google-cloud-speech not installed — skipping.')
         return
 
-    print(f'[STT] Ready — language={STT_LANG}  (google-cloud-speech streaming)')
+    print(f'[STT-Cloud] Ready — language={STT_LANG}')
 
     client = gc_speech.SpeechClient()
     config = gc_speech.RecognitionConfig(
@@ -324,12 +331,9 @@ def stt_thread(stop_event: threading.Event):
         enable_automatic_punctuation=True,
     )
     streaming_config = gc_speech.StreamingRecognitionConfig(
-        config=config,
-        interim_results=True,
+        config=config, interim_results=True,
     )
 
-    # Auto-restart loop — Google STT streaming times out after ~5 min,
-    # or stops on silence. We restart immediately so STT is always live.
     while not stop_event.is_set():
         transcript = ''
         try:
@@ -355,10 +359,65 @@ def stt_thread(stop_event: threading.Event):
                                 transcript_ts=time.time())
         except Exception as e:
             if not stop_event.is_set():
-                print(f'[STT] Restarting after error: {e}')
+                print(f'[STT-Cloud] Restarting after error: {e}')
                 time.sleep(1)
 
-    print('[STT] Stopped.')
+    print('[STT-Cloud] Stopped.')
+
+# ── 4b. Free STT — speech_recognition (Google free web API, no credentials) ────
+def stt_free_thread(stop_event: threading.Event):
+    try:
+        import speech_recognition as sr
+    except ImportError:
+        print('[STT-Free] speech_recognition not installed — run: pip install SpeechRecognition')
+        return
+
+    print(f'[STT-Free] Ready — language={STT_LANG_FREE}  (free, chunked, no credentials)')
+
+    recognizer = sr.Recognizer()
+    buf        = np.zeros(0, dtype=np.float32)
+
+    def _merge(old: str, new: str) -> str:
+        ow, nw = old.split(), new.split()
+        for i in range(min(len(ow), len(nw)), 0, -1):
+            if ow[-i:] == nw[:i]:
+                return ' '.join(ow + nw[i:])
+        return (old + ' ' + new).strip()
+
+    transcript = ''
+    while not stop_event.is_set():
+        try:
+            blk = _stt_q.get(timeout=0.5)
+        except queue.Empty:
+            continue
+
+        buf = np.append(buf, blk[:, YAMNET_CH].astype(np.float32) / 32768.0)
+
+        if len(buf) < CHUNK_SAMPLES_STT:
+            continue
+
+        chunk = buf[:CHUNK_SAMPLES_STT]
+        # keep overlap for next iteration
+        buf   = buf[CHUNK_SAMPLES_STT - OVERLAP_SAMPLES:]
+
+        audio_int16 = np.clip(chunk, -1.0, 1.0)
+        audio_bytes = (audio_int16 * 32767).astype(np.int16).tobytes()
+        audio_data  = sr.AudioData(audio_bytes, RATE, 2)
+
+        try:
+            text = recognizer.recognize_google(audio_data, language=STT_LANG_FREE).strip()
+            if text:
+                transcript = _merge(transcript, text)
+                if len(transcript) > 200:
+                    transcript = transcript[-200:]
+                _update(transcript=transcript, transcript_ts=time.time())
+        except sr.UnknownValueError:
+            pass   # silence or unintelligible
+        except Exception as e:
+            if not stop_event.is_set():
+                print(f'[STT-Free] Error: {e}')
+
+    print('[STT-Free] Stopped.')
 
 # ── FastAPI ─────────────────────────────────────────────────────────────────────
 app = FastAPI()
@@ -389,6 +448,8 @@ def main():
     parser.add_argument('--port',    type=int, default=8000)
     parser.add_argument('--ssl-key', default=None, help='Path to SSL key file (enables HTTPS)')
     parser.add_argument('--ssl-cert',default=None, help='Path to SSL cert file (enables HTTPS)')
+    parser.add_argument('--stt',     default='cloud', choices=['cloud', 'free'],
+                        help='"cloud" = paid Google Cloud STT (default), "free" = free web STT for testing')
     args = parser.parse_args()
 
     if args.device is None:
@@ -401,11 +462,14 @@ def main():
 
     stop = threading.Event()
 
+    stt_fn = stt_cloud_thread if args.stt == 'cloud' else stt_free_thread
+    print(f'STT mode: {args.stt}')
+
     for target, targs, name in [
-        (capture_thread, (args.device, stop),              'Capture'),
-        (gru_thread,     (args.model, args.rms, stop),     'GRU'),
-        (yamnet_thread,  (stop,),                          'YAMNet'),
-        (stt_thread,     (stop,),                          'STT'),
+        (capture_thread, (args.device, stop),          'Capture'),
+        (gru_thread,     (args.model, args.rms, stop), 'GRU'),
+        (yamnet_thread,  (stop,),                      'YAMNet'),
+        (stt_fn,         (stop,),                      'STT'),
     ]:
         threading.Thread(target=target, args=targs, name=name, daemon=True).start()
 
