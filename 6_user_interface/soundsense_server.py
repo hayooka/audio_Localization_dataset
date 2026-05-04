@@ -316,6 +316,7 @@ def stt_thread(stop_event: threading.Event):
 
     print(f'[STT] Ready — language={STT_LANG}  (google-cloud-speech streaming)')
 
+    client = gc_speech.SpeechClient()
     config = gc_speech.RecognitionConfig(
         encoding=gc_speech.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz=RATE,
@@ -327,32 +328,35 @@ def stt_thread(stop_event: threading.Event):
         interim_results=True,
     )
 
-    client     = gc_speech.SpeechClient()
-    transcript = ''
+    # Auto-restart loop — Google STT streaming times out after ~5 min,
+    # or stops on silence. We restart immediately so STT is always live.
+    while not stop_event.is_set():
+        transcript = ''
+        try:
+            def _make_requests():
+                for pcm in _audio_generator(stop_event):
+                    yield gc_speech.StreamingRecognizeRequest(audio_content=pcm)
 
-    def _make_requests():
-        for pcm in _audio_generator(stop_event):
-            yield gc_speech.StreamingRecognizeRequest(audio_content=pcm)
-
-    try:
-        responses = client.streaming_recognize(streaming_config, _make_requests())
-        for response in responses:
-            if stop_event.is_set():
-                break
-            for result in response.results:
-                text = result.alternatives[0].transcript.strip()
-                if not text:
-                    continue
-                if result.is_final:
-                    transcript = (transcript + ' ' + text).strip()
-                    if len(transcript) > 200:
-                        transcript = transcript[-200:]
-                    _update(transcript=transcript, transcript_ts=time.time())
-                else:
-                    _update(transcript=(transcript + ' ' + text).strip(),
-                            transcript_ts=time.time())
-    except Exception as e:
-        print(f'[STT] Error: {e}')
+            responses = client.streaming_recognize(streaming_config, _make_requests())
+            for response in responses:
+                if stop_event.is_set():
+                    break
+                for result in response.results:
+                    text = result.alternatives[0].transcript.strip()
+                    if not text:
+                        continue
+                    if result.is_final:
+                        transcript = (transcript + ' ' + text).strip()
+                        if len(transcript) > 200:
+                            transcript = transcript[-200:]
+                        _update(transcript=transcript, transcript_ts=time.time())
+                    else:
+                        _update(transcript=(transcript + ' ' + text).strip(),
+                                transcript_ts=time.time())
+        except Exception as e:
+            if not stop_event.is_set():
+                print(f'[STT] Restarting after error: {e}')
+                time.sleep(1)
 
     print('[STT] Stopped.')
 
