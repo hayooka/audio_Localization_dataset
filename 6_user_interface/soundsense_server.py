@@ -81,7 +81,8 @@ YAMNET_SAMPLES  = int(YAMNET_DURATION * RATE)   # 15 360 samples (~1 s)
 #   ch 3 — mic_front  ┐
 #   ch 4 — mic_left   │ → GRU (DOA localization)
 #   ch 5 — mic_back   ┘
-YAMNET_CH = 0   # processed/mixed output channel
+YAMNET_CH = 0   # ch0 = Conference (best for YAMNet sound classification)
+STT_CH    = 1   # ch1 = ASR-optimized (best for Google STT)
 
 SILENCE_LABEL = 'Silence'
 
@@ -314,7 +315,7 @@ def _audio_generator(stop_event: threading.Event):
             blk = _stt_q.get(timeout=0.5)
         except queue.Empty:
             continue
-        pcm = blk[:, YAMNET_CH].astype(np.int16).tobytes()
+        pcm = blk[:, STT_CH].astype(np.int16).tobytes()
         yield pcm
 
 # ── 4a. Paid STT — Google Cloud Speech streaming ────────────────────────────────
@@ -406,7 +407,7 @@ def stt_free_thread(stop_event: threading.Event):
         except queue.Empty:
             continue
 
-        buf = np.append(buf, blk[:, YAMNET_CH].astype(np.float32) / 32768.0)
+        buf = np.append(buf, blk[:, STT_CH].astype(np.float32) / 32768.0)
 
         if len(buf) < CHUNK_SAMPLES_STT:
             continue
