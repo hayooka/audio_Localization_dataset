@@ -447,7 +447,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model',  default=DEFAULT_MODEL)
     parser.add_argument('--device', type=int, default=None)
-    parser.add_argument('--rms',    type=float, default=100.0)
+    parser.add_argument('--rms',    type=float, default=50.0)
     parser.add_argument('--host',   default='0.0.0.0')
     parser.add_argument('--port',   type=int, default=8000)
     args = parser.parse_args()

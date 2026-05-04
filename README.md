@@ -1,17 +1,17 @@
-# ALGuide — Sound Source Localization
+# SoundSense — Sound Source Localization
 
-A complete pipeline for sound source localization using a **ReSpeaker 4-microphone array**, covering **24 angles** across a full 360° in 15° steps, powered by a pretrained 1D CNN classifier.
+A complete pipeline for real-time sound source localization using a **ReSpeaker XVF3800 6-microphone array**, covering **24 angles** across a full 360° in 15° steps, powered by a **GRU sequence model**.
+
+Designed as an assistive system for deaf and hearing-impaired users — runs on a Raspberry Pi and serves a mobile-friendly web UI over Wi-Fi.
 
 ---
 
-## Quick Start
+## Quick Start (installable package)
 
-**Install:**
 ```bash
 pip install git+https://github.com/hayooka/audio_Localization_dataset.git
 ```
 
-**WAV files** (your own recordings):
 ```python
 from audioloc import predict
 
@@ -20,18 +20,20 @@ angle, chunks = predict('mic_right.wav', 'mic_front.wav',
 print(f'Direction: {angle}°')
 ```
 
-**Real-time** (live ReSpeaker input):
+---
+
+## Real-Time Server (Raspberry Pi)
+
 ```bash
-pip install "audioloc[realtime]"   # adds sounddevice
-```
-```python
-from audioloc import predict_realtime
-
-predict_realtime(device=25)        # device index from your system
+cd 6_user_interface
+pip install fastapi uvicorn pyaudio torch numpy scipy tensorflow-hub google-cloud-speech
+python soundsense_server.py
 ```
 
-> First call downloads the pretrained ALL-features weights once to `~/.audioloc/`.
-> **Requires:** Python ≥ 3.8, PyTorch, NumPy, SciPy
+Open `http://<rpi-ip>:8000` on any device on the same Wi-Fi.
+
+> Requires a Google Cloud Speech-to-Text credentials JSON on the Pi.
+> Set the path in `soundsense_server.py` line 41.
 
 ---
 
@@ -39,36 +41,46 @@ predict_realtime(device=25)        # device index from your system
 
 ```
 audio_Localization_dataset/
+├── 0_Dataset/                        ← raw WAV recordings (24 angles × 2 durations)
 ├── 1_data_collection/
-│   ├── record_4mic_ReSpeaker.py  ← 4-mic recorder (6-ch ReSpeaker, ch 2–5)
-│   └── record_2mic_old.py        ← older 2-mic recorder
+│   ├── record_4mic_ReSpeaker.py      ← 6-ch ReSpeaker recorder (uses ch 2–5)
+│   ├── Raspberry_recor_Respeaker.py  ← RPi-optimised recorder
+│   └── record_2mic_old.py            ← legacy 2-mic recorder
 ├── 2_data_to_features/
-│   ├── features_to_csv.py        ← WAV → features → CSV (30ms chunks)
-│   └── 6_plot.py                 ← feature separability analysis & plots
-├── 3_inference/                  ← installable audioloc package
-│   ├── __init__.py               ← predict() + predict_realtime()
-│   └── _features.py              ← feature extraction from WAV / live audio
-├── 4_training/
-│   ├── data_processing.py        ← augmentation, early stopping
-│   ├── train_ALL_features.py     ← CNN on all 895 features  ← main model
-│   ├── train_IPD.py              ← CNN on IPD only
-│   ├── train_GCC_TDOA.py         ← CNN on GCC-TDOA only
-│   ├── train_GCC_Strength.py     ← CNN on GCC strength only
-│   ├── train_LogMel.py           ← CNN on log-mel only
-│   ├── train_RMS.py              ← CNN on RMS only
-│   └── audioLOC.pt               ← pretrained weights (ALL features, S2)
-├── results/                      ← plots & summaries per feature set
-└── pyproject.toml                ← pip package config
+│   ├── features_to_csv.py            ← WAV → 895 features → CSV (16ms chunks)
+│   └── 6_plot.py                     ← feature separability plots
+├── 3_training/
+│   ├── train_ALL_features.py         ← CNN baseline
+│   ├── sequence_audio_train.py       ← GRU sequence model (main model)
+│   ├── audioLOC.pt                   ← CNN weights
+│   └── audioLOC_GCCTDOA.pt          ← GCC-TDOA CNN weights
+├── 4_Results/
+│   ├── models/                       ← saved model checkpoints
+│   └── plots/                        ← accuracy / polar / per-angle plots
+├── 5_inference/
+│   ├── __init__.py                   ← predict() + predict_realtime()
+│   └── _features.py                  ← feature extraction (shared with UI)
+├── 6_user_interface/
+│   ├── soundsense_server.py          ← FastAPI backend (GRU + YAMNet + STT)
+│   ├── soundsense_v5.html            ← PWA frontend (compass, captions, alerts)
+│   ├── _features.py                  ← feature extraction (copy for deployment)
+│   ├── audioLOC_GRU.pt              ← GRU model weights
+│   ├── manifest.json                 ← PWA manifest (Add to Home Screen)
+│   └── sw.js                         ← Service Worker (background notifications)
+├── notebooks/
+│   └── analyze_features.ipynb        ← EDA and feature analysis
+├── pyproject.toml
+└── README.md
 ```
 
 ---
 
 ## Pipeline
 
-1. **Record** → `1_data_collection/record_4mic_ReSpeaker.py` — 5 min + 3 min WAV per angle
-2. **Extract** → `2_data_to_features/features_to_csv.py` — 30ms chunks → 895 features → CSV
-3. **Train** → `4_training/train_ALL_features.py` — 1D CNN, 24-class, saves `audioLOC.pt`
-4. **Use** → `from audioloc import predict` or `predict_realtime()`
+1. **Record** — `1_data_collection/record_4mic_ReSpeaker.py` — 5 min train + 3 min test WAV per angle
+2. **Extract** — `2_data_to_features/features_to_csv.py` — 16ms chunks → 895 features → CSV
+3. **Train** — `3_training/sequence_audio_train.py` — GRU sequence model, 24-class
+4. **Deploy** — `6_user_interface/soundsense_server.py` — live inference + YAMNet + STT
 
 ---
 
@@ -91,36 +103,59 @@ audio_Localization_dataset/
 | Scenario | Train | Test | Purpose |
 |---|---|---|---|
 | S1 | 80% of 5 min | 20% of 5 min | Internal validation |
-| S2 | 80% of 5 min | 3 min (held-out) | Generalization to unseen speech |
+| S2 | 5 min (full) | 3 min (held-out) | Generalization to unseen conditions |
 
-### Results — 16 ms chunks
+---
 
-**Per-feature models (30 ms, S1 / S2):**
+## Results
 
-| Feature Set | S1 Acc | S2 Acc | S2 MAE | S2 RMSE |
-|---|---|---|---|---|
-| GCC-TDOA | 99.83% | 90.10% | 7.8° | 30.2° |
-| GCC Strength | 99.71% | 89.44% | 8.7° | 32.3° |
-| IPD | 97.82% | 83.36% | 12.5° | 36.9° |
-| Log-Mel | 89.33% | 51.21% | 37.5° | 63.9° |
-| RMS | 20.94% | 16.10% | 70.4° | 89.9° |
+**Per-feature CNN models (30 ms chunks, S2):**
 
-**ALL-features models (16 ms, cross-recording split):**
+| Feature Set | Acc | MAE | RMSE |
+|---|---|---|---|
+| GCC-TDOA | 90.10% | 7.8° | 30.2° |
+| GCC Strength | 89.44% | 8.7° | 32.3° |
+| IPD | 83.36% | 12.5° | 36.9° |
+| Log-Mel | 51.21% | 37.5° | 63.9° |
+| RMS | 16.10% | 70.4° | 89.9° |
+
+**ALL-features sequence models (16 ms chunks, cross-recording split):**
 
 | Model | Acc | MAE | RMSE |
 |---|---|---|---|
 | CNN (seq=2, 32ms context) | 83.04% | 12.4° | 37.1° |
-| GRU (seq=32, 512ms context) | 99.19% | 0.5° | 7.4° |
+| **GRU (seq=32, 512ms context)** | **99.19%** | **0.5°** | **7.4°** |
+
+---
+
+## Real-Time UI Features
+
+- **Compass** — live DOA arrow updating every 16ms
+- **Sound classification** — YAMNet dual-mic agreement filter (reduces false positives)
+- **Speech-to-text** — Google Cloud Speech streaming (Arabic / English)
+- **Alerts** — danger sound detection with push notifications + haptic vibration
+- **PWA** — installable on iOS / Android (Add to Home Screen)
+- **Two views** — Detailed (full info) and Light (large text, accessible)
 
 ---
 
 ## Hardware
 
-- **Mic array:** ReSpeaker USB 4-mic array
+- **Mic array:** ReSpeaker XVF3800 (6-ch USB)
 - **Host:** Raspberry Pi 5
-- **Distance:** speaker placed 1.75 m from ReSpeaker
+- **Speaker distance:** 1.75 m from array
 - **Angles:** 24 positions, 0°–345° in 15° steps
-- **Format:** 16-bit, 16 kHz, mono WAV per channel
+- **Format:** 16-bit, 16 kHz, 6-channel WAV
+
+<!-- Add photos of the ReSpeaker and setup here -->
+<!-- ![ReSpeaker XVF3800](docs/images/respeaker.jpg) -->
+<!-- ![Setup overview](docs/images/setup.jpg) -->
+
+---
+
+## Deployment
+
+To run the real-time server on a Raspberry Pi, see **[SETUP_PI.md](SETUP_PI.md)** for full step-by-step instructions covering installation, credentials, auto-start on boot, and troubleshooting.
 
 ---
 

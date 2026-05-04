@@ -3,23 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="SoundSense">
+<link rel="manifest" href="/manifest.json">
 <title>SoundSense</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f8;padding:14px;min-height:100vh}
 
 /* ── Top bar ── */
-.top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
 .app-title{font-size:20px;font-weight:700;color:#1a1a2e}
 .app-sub{font-size:11px;color:#aaa;margin-top:1px;letter-spacing:.5px}
-.right-top{display:flex;align-items:center;gap:8px}
+.right-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .live-pill{display:flex;align-items:center;gap:5px;background:#e6f9f0;border:0.5px solid #a3dfc0;border-radius:20px;padding:5px 13px;font-size:12px;color:#1a7a4a;font-weight:600}
 .live-dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.4s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 
-/* disconnected state */
 .live-pill.disconnected{background:#fff0f0;border-color:#f5b8b8;color:#a32d2d}
-.live-pill.disconnected .live-dot{background:#e24b4a}
+.live-pill.disconnected .live-dot{background:#e24b4a;animation:none}
 
 .mode-toggle{display:flex;background:#fff;border:0.5px solid #dde0ea;border-radius:20px;padding:3px}
 .mode-btn{font-size:12px;font-weight:600;padding:5px 16px;border-radius:16px;border:none;cursor:pointer;background:transparent;color:#999;transition:all 0.2s}
@@ -28,6 +32,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ── dual-mic badge ── */
 .dual-mic-badge{display:inline-flex;align-items:center;gap:5px;background:#eaf3fd;border:0.5px solid #b8d6f5;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:600;color:#2266aa}
 .dual-mic-badge svg{width:13px;height:13px;stroke:#2266aa;fill:none;stroke-width:2}
+
+/* ── Vibration toggle button ── */
+.vib-btn{display:inline-flex;align-items:center;gap:5px;border-radius:12px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer;border:0.5px solid;transition:all 0.2s}
+.vib-btn.on {background:#e6f9f0;border-color:#a3dfc0;color:#1a7a4a}
+.vib-btn.off{background:#f5f6fb;border-color:#dde0ea;color:#aaa}
+.vib-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2}
+
+/* ── Notification permission banner ── */
+.notif-banner{background:#fffbe6;border:0.5px solid #f5d87a;border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:#7a5a00}
+.notif-banner button{background:#f5c842;border:none;border-radius:8px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#5a3d00}
+.notif-banner.hidden{display:none}
 
 .view{display:none}.view.visible{display:block}
 
@@ -136,6 +151,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </head>
 <body>
 
+<!-- Notification permission banner -->
+<div class="notif-banner hidden" id="notif-banner">
+  🔔 Enable notifications to get alerted when speech or danger sounds are detected.
+  <button onclick="requestNotifPermission()">Enable</button>
+</div>
+
 <div class="top-bar">
   <div>
     <div class="app-title">SoundSense</div>
@@ -146,6 +167,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
       Dual-mic
     </div>
+    <!-- Vibration toggle -->
+    <button class="vib-btn on" id="vib-btn" onclick="toggleVibration()" title="Toggle vibration on speech start">
+      <svg viewBox="0 0 24 24"><path d="M2 8v8"/><path d="M6 6v12"/><rect x="10" y="4" width="4" height="16" rx="2"/><path d="M18 6v12"/><path d="M22 8v8"/></svg>
+      <span id="vib-label">Vibration ON</span>
+    </button>
     <div class="mode-toggle">
       <button class="mode-btn active" onclick="setMode('detailed')">Detailed</button>
       <button class="mode-btn" onclick="setMode('light')">Light</button>
@@ -204,7 +230,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="speech-card">
     <div class="speech-header">
       <div class="card-label"><span class="ldot" style="background:#1D9E75"></span>What is being said?</div>
-      <button class="clear-btn" onclick="clearTranscript()" title="Clear transcript">
+      <button class="clear-btn" onclick="manualClear()" title="Clear transcript">
         <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
         Clear
       </button>
@@ -282,7 +308,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="light-caption-card">
     <div class="light-cap-header">
       <div class="light-cap-label"><span class="ldot" style="background:#1D9E75"></span>What is being said?</div>
-      <button class="clear-btn" onclick="clearTranscript()" title="Clear transcript">
+      <button class="clear-btn" onclick="manualClear()" title="Clear transcript">
         <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
         Clear
       </button>
@@ -348,16 +374,86 @@ function soundIcon(label, isAlert) {
     path:'<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>'};
 }
 
-// ── STT auto-clear (7 seconds of silence) ──────────────────────────────────────
-const STT_CLEAR_AFTER_MS = 7000;   // clear transcript after 7 s of no new speech
-let   sttClearedAt       = null;   // null = no active transcript
-let   lastTranscriptTs   = 0;      // Unix timestamp from backend
-let   manuallyCleared    = false;
-let   sttTimerInterval   = null;
-let   currentTranscript  = '';
+// ═══════════════════════════════════════════════════════════════════
+// VIBRATION — user toggle, 1-second single pulse on speech start
+// ═══════════════════════════════════════════════════════════════════
+let vibrationEnabled = true;
+
+function toggleVibration(){
+  vibrationEnabled = !vibrationEnabled;
+  const btn = document.getElementById('vib-btn');
+  const lbl = document.getElementById('vib-label');
+  btn.className = 'vib-btn ' + (vibrationEnabled ? 'on' : 'off');
+  lbl.textContent = vibrationEnabled ? 'Vibration ON' : 'Vibration OFF';
+}
+
+function triggerVibration(){
+  if(vibrationEnabled && 'vibrate' in navigator){
+    navigator.vibrate(0);
+    navigator.vibrate(1000);
+    setTimeout(() => navigator.vibrate(0), 1050);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WEB PUSH NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════════
+let notifPermission = Notification.permission;
+
+function initNotifications(){
+  if(notifPermission === 'default'){
+    document.getElementById('notif-banner').classList.remove('hidden');
+  }
+}
+
+async function requestNotifPermission(){
+  try {
+    const result = await Notification.requestPermission();
+    notifPermission = result;
+    document.getElementById('notif-banner').classList.add('hidden');
+    if(result === 'granted'){
+      new Notification('SoundSense', {
+        body: 'Notifications enabled. You will be alerted on speech and danger events.',
+        icon: '/icon-192.png',
+        tag: 'soundsense-welcome',
+      });
+    }
+  } catch(e){ console.warn('Notification permission error:', e); }
+}
+
+function fireNotification(title, body, tag){
+  if(notifPermission !== 'granted') return;
+  try {
+    if(navigator.serviceWorker && navigator.serviceWorker.controller){
+      navigator.serviceWorker.controller.postMessage({
+        type:'SHOW_NOTIF', title, body, tag
+      });
+    } else {
+      const n = new Notification(title, {
+        body, tag,
+        icon: '/icon-192.png',
+        renotify: true,
+        requireInteraction: false,
+      });
+      setTimeout(() => n.close(), 4000);
+    }
+  } catch(e){ console.warn('Notification error:', e); }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STT STATE
+// ═══════════════════════════════════════════════════════════════════
+const STT_CLEAR_AFTER_MS = 7000;
+let lastTranscriptTs   = 0;
+let lastEventId        = 0;
+let manuallyCleared    = false;
+let sttTimerInterval   = null;
+let currentTranscript  = '';
 
 // History for detailed view
 let historyLines = [];
+// Alert notification dedup
+let lastAlertLabel = '';
 
 function startClearTimer() {
   clearInterval(sttTimerInterval);
@@ -375,7 +471,7 @@ function startClearTimer() {
       // Auto-clear
       clearInterval(sttTimerInterval);
       timerWrap.classList.remove('visible');
-      pushToHistory(currentTranscript);
+      pushHistory(currentTranscript);
       currentTranscript = '';
       setCaption('', false);
       return;
@@ -410,7 +506,7 @@ function setCaption(text, hasContent) {
   }
 }
 
-function pushToHistory(line) {
+function pushHistory(line) {
   if (!line || !line.trim()) return;
   historyLines.unshift(line.trim());
   if (historyLines.length > 2) historyLines = historyLines.slice(0, 2);
@@ -420,8 +516,8 @@ function pushToHistory(line) {
   if (h2) h2.textContent = historyLines[1] ? `"${historyLines[1]}"` : '—';
 }
 
-function clearTranscript() {
-  if (currentTranscript) pushToHistory(currentTranscript);
+function manualClear() {
+  if (currentTranscript) pushHistory(currentTranscript);
   currentTranscript = '';
   manuallyCleared   = true;
   stopClearTimer();
@@ -473,8 +569,14 @@ function renderLive(data) {
     da.style.display = 'flex';
     document.getElementById('d-alert-msg').textContent  = data.alert_msg;
     document.getElementById('d-alert-hint').textContent = data.alert_hint;
+    if(label !== lastAlertLabel){
+      lastAlertLabel = label;
+      fireNotification('⚠️ ' + label, data.alert_hint || 'Check your surroundings', 'soundsense-alert');
+      triggerVibration();
+    }
   } else {
     da.style.display = 'none';
+    lastAlertLabel = '';
   }
 
   // ── Light: sound icon ──────────────────────────────────────────────────────
@@ -505,13 +607,24 @@ function renderLive(data) {
   }
 
   // ── Transcript / STT ───────────────────────────────────────────────────────
-  const newTs = data.transcript_ts || 0;
-  const newTx = (data.transcript   || '').trim();
+  const evId  = data.speech_event_id || 0;
+  const newTs = data.transcript_ts   || 0;
+  const newTx = (data.transcript     || '').trim();
 
   if (newTx && newTs > lastTranscriptTs) {
-    // New speech arrived from backend
     lastTranscriptTs = newTs;
     manuallyCleared  = false;
+
+    // New speech event — save old transcript to history
+    if(evId > lastEventId){
+      lastEventId = evId;
+      if(currentTranscript) pushHistory(currentTranscript);
+      currentTranscript = '';
+      stopClearTimer();
+      fireNotification('🎤 Speech detected', newTx.substring(0, 80), 'soundsense-speech');
+      triggerVibration();
+    }
+
     currentTranscript = newTx;
     setCaption(newTx, true);
     startClearTimer();
@@ -525,6 +638,11 @@ function setMode(m) {
   document.querySelectorAll('.mode-btn').forEach(
     b => b.classList.toggle('active', b.textContent.toLowerCase() === m)
   );
+}
+
+// ── Service Worker ──────────────────────────────────────────────────────────────
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
 // ── WebSocket with auto-reconnect ───────────────────────────────────────────────
@@ -552,6 +670,9 @@ function setMode(m) {
 
   ws.onerror = () => ws.close();
 })();
+
+// Init notification prompt on load
+initNotifications();
 </script>
 </body>
 </html>

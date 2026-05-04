@@ -24,6 +24,9 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Large archives and credentials
+# Large archives
 *.zip
-*.json
+
+# Credentials only (not manifest.json or other project JSON)
+*credentials*.json
+google_*.json
