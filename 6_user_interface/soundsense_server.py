@@ -75,20 +75,14 @@ YAMNET_DURATION = 0.96
 YAMNET_SAMPLES  = int(YAMNET_DURATION * RATE)   # 15 360 samples (~1 s)
 
 # ReSpeaker XVF3800 channel layout (6-ch USB stream):
-#   ch 0 — processed/mixed output  (not used)
-#   ch 1 — mono reference mic      → YAMNet mic A  + STT
-#   ch 2 — mic_right               → YAMNet mic B  (second independent channel)
+#   ch 0 — processed/mixed output  → YAMNet + STT
+#   ch 1 — mono reference mic
+#   ch 2 — mic_right
 #   ch 3 — mic_front  ┐
 #   ch 4 — mic_left   │ → GRU (DOA localization)
 #   ch 5 — mic_back   ┘
-YAMNET_CH_A = 1   # reference mic
-YAMNET_CH_B = 2   # directional mic (mic_right, physically separated)
+YAMNET_CH = 0   # processed/mixed output channel
 
-# ── Dual-mic agreement parameters ──────────────────────────────────────────────
-YAMNET_AGREE_THRESH  = 0.25   # both mics must exceed this confidence
-YAMNET_INDEX_TOLERANCE = 3    # class-map indices within ±3 are treated as equal
-                               # (catches "Speech" / "Conversation" / "Male speech"
-                               #  which sit adjacent in YAMNet's 521-class map)
 SILENCE_LABEL = 'Silence'
 
 ANGLES = list(range(0, 360, 15))
@@ -241,25 +235,8 @@ def gru_thread(model_path: str, rms_thresh: float, stop_event: threading.Event):
 
     print('[GRU] Stopped.')
 
-# ── 3. YAMNet dual-mic inference thread  (NEW) ─────────────────────────────────
+# ── 3. YAMNet inference thread (channel 0 — processed output) ──────────────────
 def yamnet_thread(stop_event: threading.Event):
-    """
-    Runs YAMNet on two independent microphone channels in parallel.
-
-    Agreement rule
-    ──────────────
-    • Both mics must produce the SAME top-1 label (or labels whose
-      class indices are within YAMNET_INDEX_TOLERANCE of each other).
-    • Both top-1 confidence scores must exceed YAMNET_AGREE_THRESH.
-    • If either condition fails → output SILENCE_LABEL so the UI stays
-      clean and no incorrect label is displayed.
-
-    Fusion
-    ──────
-    When both mics agree, the final per-class scores sent to the UI are
-    the element-wise mean of both mics' score vectors.  This gives more
-    stable confidence bars than using only one mic.
-    """
     try:
         import tensorflow_hub as hub
     except ImportError:
@@ -273,13 +250,9 @@ def yamnet_thread(stop_event: threading.Event):
     with open(class_map_path) as f:
         for line in f.readlines()[1:]:
             class_names.append(line.split(',')[2].strip())
-    n_classes = len(class_names)
-    print(f'[YAMNet] Ready — {n_classes} classes | '
-          f'agree_thresh={YAMNET_AGREE_THRESH} | '
-          f'index_tolerance={YAMNET_INDEX_TOLERANCE}')
+    print(f'[YAMNet] Ready — {len(class_names)} classes | ch={YAMNET_CH} (processed output)')
 
-    buf_a = []   # reference mic  (ch 1)
-    buf_b = []   # directional mic (ch 2)
+    buf = []
 
     while not stop_event.is_set():
         try:
@@ -287,60 +260,22 @@ def yamnet_thread(stop_event: threading.Event):
         except queue.Empty:
             continue
 
-        # Accumulate both channels simultaneously
-        buf_a.extend(blk[:, YAMNET_CH_A].astype(np.float32) / 32768.0)
-        buf_b.extend(blk[:, YAMNET_CH_B].astype(np.float32) / 32768.0)
+        buf.extend(blk[:, YAMNET_CH].astype(np.float32) / 32768.0)
 
-        # Wait until we have a full inference window for both
-        if len(buf_a) < YAMNET_SAMPLES or len(buf_b) < YAMNET_SAMPLES:
+        if len(buf) < YAMNET_SAMPLES:
             continue
 
-        # Consume one window from each buffer (non-overlapping for stability)
-        wav_a = np.array(buf_a[:YAMNET_SAMPLES], dtype=np.float32)
-        wav_b = np.array(buf_b[:YAMNET_SAMPLES], dtype=np.float32)
-        buf_a = buf_a[YAMNET_SAMPLES:]
-        buf_b = buf_b[YAMNET_SAMPLES:]
+        wav      = np.array(buf[:YAMNET_SAMPLES], dtype=np.float32)
+        buf      = buf[YAMNET_SAMPLES:]
 
-        # ── Independent inference ──────────────────────────────────────────────
-        scores_a, _, _ = yamnet(wav_a)
-        scores_b, _, _ = yamnet(wav_b)
+        scores, _, _ = yamnet(wav)
+        mean         = scores.numpy().mean(axis=0)
 
-        mean_a = scores_a.numpy().mean(axis=0)   # shape (n_classes,)
-        mean_b = scores_b.numpy().mean(axis=0)
-
-        top_idx_a = int(np.argmax(mean_a))
-        top_idx_b = int(np.argmax(mean_b))
-        top_conf_a = float(mean_a[top_idx_a])
-        top_conf_b = float(mean_b[top_idx_b])
-
-        # ── Agreement check ────────────────────────────────────────────────────
-        # Relaxed: indices within tolerance are treated as matching
-        indices_agree = abs(top_idx_a - top_idx_b) <= YAMNET_INDEX_TOLERANCE
-        conf_ok       = (top_conf_a >= YAMNET_AGREE_THRESH and
-                         top_conf_b >= YAMNET_AGREE_THRESH)
-
-        if not (indices_agree and conf_ok):
-            # Disagreement or low confidence — output silence
-            _update(
-                sound_label  = SILENCE_LABEL,
-                sound_scores = [],
-                is_alert     = False,
-                alert_msg    = '',
-                alert_hint   = '',
-            )
-            continue
-
-        # ── Fuse scores (mean of both mics) ────────────────────────────────────
-        fused = (mean_a + mean_b) / 2.0
-
-        # Pick the agreed-upon label (use mic A's top index as reference,
-        # then re-rank by fused scores among top-5)
-        top_indices = np.argsort(fused)[-5:][::-1]
-
-        scores_out = [
-            {'label': class_names[i], 'score': round(float(fused[i]), 3)}
+        top_indices = np.argsort(mean)[-5:][::-1]
+        scores_out  = [
+            {'label': class_names[i], 'score': round(float(mean[i]), 3)}
             for i in top_indices
-            if fused[i] > 0.05
+            if mean[i] > 0.05
         ]
         if not scores_out:
             continue
@@ -348,16 +283,14 @@ def yamnet_thread(stop_event: threading.Event):
         top_label = scores_out[0]['label']
         alert     = _is_alert(top_label)
 
-        print(f'[YAMNet] AGREED  {top_label!r}  '
-              f'A={top_conf_a:.2f}  B={top_conf_b:.2f}  '
-              f'idx_A={top_idx_a}  idx_B={top_idx_b}')
+        print(f'[YAMNet] {top_label!r}  conf={scores_out[0]["score"]:.2f}')
 
         _update(
             sound_label  = top_label,
             sound_scores = scores_out,
             is_alert     = alert,
             alert_msg    = f'Warning — {top_label} detected' if alert else '',
-            alert_hint   = 'Check your surroundings immediately'  if alert else '',
+            alert_hint   = 'Check your surroundings immediately' if alert else '',
         )
 
     print('[YAMNet] Stopped.')
@@ -371,7 +304,7 @@ def _audio_generator(stop_event: threading.Event):
             blk = _stt_q.get(timeout=0.5)
         except queue.Empty:
             continue
-        pcm = blk[:, YAMNET_CH_A].astype(np.int16).tobytes()
+        pcm = blk[:, YAMNET_CH].astype(np.int16).tobytes()
         yield pcm
 
 def stt_thread(stop_event: threading.Event):
@@ -445,11 +378,13 @@ async def ws_endpoint(ws: WebSocket):
 # ── Entry point ─────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model',  default=DEFAULT_MODEL)
-    parser.add_argument('--device', type=int, default=None)
-    parser.add_argument('--rms',    type=float, default=50.0)
-    parser.add_argument('--host',   default='0.0.0.0')
-    parser.add_argument('--port',   type=int, default=8000)
+    parser.add_argument('--model',   default=DEFAULT_MODEL)
+    parser.add_argument('--device',  type=int, default=None)
+    parser.add_argument('--rms',     type=float, default=50.0)
+    parser.add_argument('--host',    default='0.0.0.0')
+    parser.add_argument('--port',    type=int, default=8000)
+    parser.add_argument('--ssl-key', default=None, help='Path to SSL key file (enables HTTPS)')
+    parser.add_argument('--ssl-cert',default=None, help='Path to SSL cert file (enables HTTPS)')
     args = parser.parse_args()
 
     if args.device is None:
@@ -470,9 +405,17 @@ def main():
     ]:
         threading.Thread(target=target, args=targs, name=name, daemon=True).start()
 
-    print(f'\nOpen  http://<rpi-ip>:{args.port}  in any browser on the same Wi-Fi.\n')
+    scheme = 'https' if args.ssl_cert else 'http'
+    print(f'\nOpen  {scheme}://<rpi-ip>:{args.port}  in any browser on the same Wi-Fi.\n')
     try:
-        uvicorn.run(app, host=args.host, port=args.port, log_level='warning')
+        uvicorn.run(
+            app,
+            host        = args.host,
+            port        = args.port,
+            log_level   = 'warning',
+            ssl_keyfile = args.ssl_key,
+            ssl_certfile= args.ssl_cert,
+        )
     finally:
         stop.set()
 

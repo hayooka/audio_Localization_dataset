@@ -33,11 +33,19 @@ sudo apt install -y python3-pip python3-venv portaudio19-dev libsndfile1
 
 ---
 
-## Step 3 — Clone the repository
+## Step 3 — Get the repository
 
+**First time — clone it:**
 ```bash
 git clone https://github.com/hayooka/audio_Localization_dataset.git
 cd audio_Localization_dataset/6_user_interface
+```
+
+**Already cloned and there are new changes — just pull:**
+```bash
+cd audio_Localization_dataset
+git pull origin main
+cd 6_user_interface
 ```
 
 ---
@@ -104,17 +112,30 @@ cp audioLOC_GRU.pt ~/.soundsense/audioLOC_GRU.pt
 
 ---
 
-## Step 8 — Run the server
+## Step 8 — Generate SSL certificate (for notifications)
+
+Notifications require HTTPS. Generate a free self-signed certificate on the Pi (one time only):
+
+```bash
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes \
+  -subj "/CN=soundsense"
+```
+
+This creates two files: `key.pem` and `cert.pem` in the current folder.
+
+---
+
+## Step 9 — Run the server
 
 ```bash
 source venv/bin/activate   # if not already activated
-python soundsense_server.py
+python3 soundsense_server.py --ssl-key key.pem --ssl-cert cert.pem
 ```
 
 The server auto-detects the ReSpeaker. If it doesn't, pass the device index manually:
 
 ```bash
-python soundsense_server.py --device 2
+python3 soundsense_server.py --ssl-key key.pem --ssl-cert cert.pem --device 2
 ```
 
 You should see:
@@ -122,20 +143,32 @@ You should see:
 ```
 Audio device index: 2
 [GRU] Ready — seq=32 frames (512ms context)
-[YAMNet] Ready — 521 classes
+[YAMNet] Ready — 521 classes | ch=0 (processed output)
 [STT] Ready — language=ar-KW
-Open  http://<rpi-ip>:8000  in any browser on the same Wi-Fi.
+Open  https://<rpi-ip>:8000  in any browser on the same Wi-Fi.
 ```
 
 ---
 
-## Step 9 — Open the UI
+## Step 10 — Open the UI
 
-On your phone or laptop, open:
+First, find the Pi's IP address by running this on the Pi:
+
+```bash
+hostname -I
+```
+
+It will print something like `192.168.1.45`. Use that in the URL.
+
+Then on your phone or laptop (**on the same Wi-Fi**), open:
 
 ```
-http://<your-pi-ip>:8000
+https://192.168.1.45:8000
 ```
+
+> **Browser warning:** Because the certificate is self-signed, the browser will show "Your connection is not private". This is normal — click **Advanced → Proceed to 192.168.1.45** (or "Accept the risk"). You only need to do this once.
+
+After that, the browser will ask to allow notifications — click **Allow** to enable sound and speech alerts.
 
 On **Android/iPhone**, tap **Add to Home Screen** to install it as an app (PWA).
 
@@ -159,7 +192,7 @@ After=network.target
 [Service]
 User=pi
 WorkingDirectory=/home/pi/audio_Localization_dataset/6_user_interface
-ExecStart=/home/pi/audio_Localization_dataset/6_user_interface/venv/bin/python soundsense_server.py
+ExecStart=/home/pi/audio_Localization_dataset/6_user_interface/venv/bin/python3 soundsense_server.py --ssl-key key.pem --ssl-cert cert.pem
 Restart=on-failure
 RestartSec=5
 
@@ -200,14 +233,14 @@ sudo systemctl status soundsense
 
 ```bash
 # Basic run (auto-detect ReSpeaker)
-python soundsense_server.py
+python3 soundsense_server.py
 
 # Specify device index
-python soundsense_server.py --device 2
+python3 soundsense_server.py --device 2
 
 # Change port (default 8000)
-python soundsense_server.py --port 9000
+python3 soundsense_server.py --port 9000
 
 # Adjust RMS silence threshold (default 50)
-python soundsense_server.py --rms 30
+python3 soundsense_server.py --rms 30
 ```
