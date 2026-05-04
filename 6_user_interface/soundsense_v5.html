@@ -398,15 +398,17 @@ function triggerVibration(){
 // ═══════════════════════════════════════════════════════════════════
 // WEB PUSH NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════════════
-let notifPermission = Notification.permission;
+let notifPermission = (typeof Notification !== 'undefined') ? Notification.permission : 'denied';
 
 function initNotifications(){
+  if(typeof Notification === 'undefined') return;
   if(notifPermission === 'default'){
     document.getElementById('notif-banner').classList.remove('hidden');
   }
 }
 
 async function requestNotifPermission(){
+  if(typeof Notification === 'undefined') return;
   try {
     const result = await Notification.requestPermission();
     notifPermission = result;
