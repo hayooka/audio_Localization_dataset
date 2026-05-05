@@ -29,9 +29,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .mode-btn{font-size:12px;font-weight:600;padding:5px 16px;border-radius:16px;border:none;cursor:pointer;background:transparent;color:#999;transition:all 0.2s}
 .mode-btn.active{background:#1a1a2e;color:#fff}
 
-/* ── dual-mic badge ── */
-.dual-mic-badge{display:inline-flex;align-items:center;gap:5px;background:#eaf3fd;border:0.5px solid #b8d6f5;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:600;color:#2266aa}
-.dual-mic-badge svg{width:13px;height:13px;stroke:#2266aa;fill:none;stroke-width:2}
 
 /* ── Toggle buttons (vibration / notifications) ── */
 .toggle-btn{display:inline-flex;align-items:center;gap:5px;border-radius:12px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer;border:0.5px solid;transition:all 0.2s}
@@ -163,10 +160,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="app-sub">ReSpeaker 360 · Real-time Assistive Interface</div>
   </div>
   <div class="right-top">
-    <div class="dual-mic-badge">
-      <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-      Dual-mic
-    </div>
     <!-- Language toggle -->
     <button class="toggle-btn on" id="lang-btn" onclick="toggleLang()" title="Switch STT language">
       <svg viewBox="0 0 24 24"><path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="M22 22l-5-10-5 10"/><path d="M14 18h6"/></svg>
@@ -505,8 +498,10 @@ function startClearTimer() {
   const timerWrap = document.getElementById('d-timer-wrap');
   const timerFill = document.getElementById('d-timer-fill');
 
+  const startedAt = Date.now();   // anchor — immune to later lastTranscriptTs updates
+
   sttTimerInterval = setInterval(() => {
-    const elapsed = Date.now() - lastTranscriptTs * 1000;
+    const elapsed   = Date.now() - startedAt;
     const remaining = STT_CLEAR_AFTER_MS - elapsed;
 
     if (remaining <= 0) {
@@ -582,8 +577,8 @@ function renderLive(data) {
   nameEl.className   = 'snd-name' + (isSilence ? ' silence' : '');
 
   document.getElementById('d-snd-desc').textContent = isSilence
-    ? 'Both microphones — no agreement'
-    : scores[0] ? `${Math.round(scores[0].score * 100)}% confidence · dual-mic verified` : '';
+    ? ''
+    : scores[0] ? `${Math.round(scores[0].score * 100)}% confidence` : '';
 
   [0,1,2].forEach(i => {
     const s   = scores[i];
@@ -629,7 +624,7 @@ function renderLive(data) {
   sv.setAttribute('stroke', ico.stroke);
   sv.innerHTML = ico.path;
   document.getElementById('l-snd-name').textContent = label;
-  document.getElementById('l-snd-desc').textContent = isSilence ? 'No agreement between mics'
+  document.getElementById('l-snd-desc').textContent = isSilence ? ''
     : scores[0] ? Math.round(scores[0].score * 100) + '% confidence' : '';
 
   // ── Light: compass ─────────────────────────────────────────────────────────
