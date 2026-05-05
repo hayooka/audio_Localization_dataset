@@ -95,7 +95,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .clear-btn:hover{background:#ffe8e8;border-color:#f5b8b8;color:#a32d2d}
 .clear-btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.5}
 .cap-box{background:#f5f6fb;border-radius:10px;padding:14px 16px;margin-bottom:10px;min-height:58px;position:relative}
-.cap-text{font-size:23px;font-weight:400;color:#1a1a2e;line-height:1.45}
+.cap-text{font-size:23px;font-weight:400;color:#1a1a2e;line-height:1.45;direction:rtl;text-align:right}
 .cap-placeholder{font-size:16px;color:#ccc;font-style:italic}
 .blink{display:inline-block;width:2.5px;height:23px;background:#1a7a4a;vertical-align:middle;margin-left:2px;animation:blink 1s step-end infinite}
 @keyframes blink{50%{opacity:0}}
@@ -145,7 +145,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .light-caption-card{background:#fff;border:0.5px solid #e4e7f2;border-radius:16px;padding:18px;margin-bottom:12px}
 .light-cap-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .light-cap-label{font-size:10px;font-weight:700;color:#bbb;letter-spacing:1.4px;text-transform:uppercase;display:flex;align-items:center;gap:6px}
-.light-cap-text{font-size:30px;font-weight:400;color:#1a1a2e;line-height:1.4;min-height:44px}
+.light-cap-text{font-size:30px;font-weight:400;color:#1a1a2e;line-height:1.4;min-height:44px;direction:rtl;text-align:right}
 .light-cap-placeholder{font-size:18px;color:#ccc;font-style:italic}
 </style>
 </head>
@@ -419,12 +419,20 @@ function toggleNotifications(){
   lbl.textContent = notificationsEnabled ? 'Notif ON' : 'Notif OFF';
 }
 
-function triggerVibration(){
-  if(vibrationEnabled && 'vibrate' in navigator){
-    navigator.vibrate(0);
-    navigator.vibrate(1000);
-    setTimeout(() => navigator.vibrate(0), 1050);
-  }}
+// Haptic feedback — uses Capacitor Haptics when running as a native app,
+// falls back to navigator.vibrate in a plain browser context.
+async function triggerHaptic() {
+  if (!vibrationEnabled) return;
+  try {
+    const Haptics = window.Capacitor?.Plugins?.Haptics;
+    if (Haptics) {
+      // ~1 s heavy impact via Capacitor (Android + iOS)
+      await Haptics.impact({ style: 'HEAVY' });
+    } else if ('vibrate' in navigator) {
+      navigator.vibrate(1000);
+    }
+  } catch (e) { console.warn('Haptic error:', e); }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // WEB PUSH NOTIFICATIONS
@@ -455,7 +463,6 @@ async function requestNotifPermission(){
 }
 
 function fireNotification(title, body, tag){
-  triggerVibration();   // vibrate on every notification
   if(!notificationsEnabled) return;
   if(notifPermission !== 'granted') return;
   try {
@@ -606,6 +613,7 @@ function renderLive(data) {
     document.getElementById('d-alert-hint').textContent = data.alert_hint;
     if(label !== lastAlertLabel){
       lastAlertLabel = label;
+      triggerHaptic();
       fireNotification('⚠️ ' + label, data.alert_hint || 'Check your surroundings', 'soundsense-alert');
     }
   } else {
@@ -646,18 +654,32 @@ function renderLive(data) {
   const newTx = (data.transcript     || '').trim();
 
   if (newTx && newTs > lastTranscriptTs) {
+    const silenceGapMs = lastTranscriptTs > 0
+      ? (newTs - lastTranscriptTs) * 1000
+      : 0;
+
+    // A new speech event is defined by either a new event id OR a silence gap
+    // of 7 s or more since the last received transcript timestamp.
+    const isNewEvent = evId > lastEventId || silenceGapMs >= STT_CLEAR_AFTER_MS;
+
     lastTranscriptTs = newTs;
     manuallyCleared  = false;
 
-    // New speech event — save old transcript to history
-    if(evId > lastEventId){
-      lastEventId = evId;
-      if(currentTranscript) pushHistory(currentTranscript);
+    if (isNewEvent) {
+      // Save the finished utterance to history, then start completely fresh.
+      if (currentTranscript) pushHistory(currentTranscript);
       currentTranscript = '';
+      lastEventId = evId;
       stopClearTimer();
+
+      // Haptic feedback — once at the start of each new speech event only.
+      triggerHaptic();
+
       fireNotification('🎤 Speech detected', newTx.substring(0, 80), 'soundsense-speech');
     }
 
+    // Assign directly — never merge across events; within an event the server
+    // already returns the full rolling transcript so assignment is sufficient.
     currentTranscript = newTx;
     setCaption(newTx, true);
     startClearTimer();
