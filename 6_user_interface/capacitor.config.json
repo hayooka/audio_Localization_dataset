@@ -1,0 +1,19 @@
+{
+  "appId":   "com.soundsense.app",
+  "appName": "SoundSense",
+  "webDir":  "www",
+  "server": {
+    "url":             "http://192.168.1.100:8000",
+    "cleartext":       true,
+    "allowNavigation": ["192.168.*.*"]
+  },
+  "android": {
+    "allowMixedContent": true
+  },
+  "ios": {
+    "contentInset": "automatic"
+  },
+  "plugins": {
+    "Haptics": {}
+  }
+}

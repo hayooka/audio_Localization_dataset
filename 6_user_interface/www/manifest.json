@@ -1,0 +1,24 @@
+{
+  "name": "SoundSense",
+  "short_name": "SoundSense",
+  "description": "Real-time assistive interface for deaf and hearing-impaired users",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0f2f8",
+  "theme_color": "#1a1a2e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

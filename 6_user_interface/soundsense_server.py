@@ -5,8 +5,11 @@ Architecture:
   [capture thread] — one PyAudio stream from ReSpeaker
        │
        ├──► gru_queue    ──► [GRU thread]     angle / confidence  (every 16ms)
-       ├──► yamnet_queue ──► [YAMNet thread]  dual-mic agreement filter (~1 s)
-       └──► stt_queue    ──► [STT thread]     transcript (1.2s chunks, 0.3s overlap)
+       ├──► yamnet_queue ──► [YAMNet thread]  sound classification, ch0 (~1 s)
+       └──► stt_queue    ──► [STT thread]     transcript, ch1
+                                                  cloud: streaming (requires credentials)
+                                                  free:  chunked 1.2s clips, 0.3s overlap
+                                              selected at startup via --stt cloud|free
 
 KEY CHANGES vs v1
 ─────────────────
@@ -120,15 +123,16 @@ class SequenceGRU(nn.Module):
 # ── Shared output state ─────────────────────────────────────────────────────────
 _lock  = threading.Lock()
 _state = {
-    'angle':        0,
-    'confidence':   0.0,
-    'sound_label':  'Listening…',
-    'sound_scores': [],
-    'is_alert':     False,
-    'alert_msg':    '',
-    'alert_hint':   '',
-    'transcript':   '',
-    'transcript_ts': 0.0,
+    'angle':           0,
+    'confidence':      0.0,
+    'sound_label':     'Listening…',
+    'sound_scores':    [],
+    'is_alert':        False,
+    'alert_msg':       '',
+    'alert_hint':      '',
+    'transcript':      '',
+    'transcript_ts':   0.0,
+    'speech_event_id': 0,
 }
 
 
@@ -343,7 +347,9 @@ def stt_cloud_thread(stop_event: threading.Event):
             config=config, interim_results=True,
         )
         print(f'[STT-Cloud] Streaming — language={lang}')
-        transcript = ''
+        SILENCE_RESET_SEC = 7.0
+        transcript     = ''
+        last_speech_ts = 0.0
         try:
             def _make_requests():
                 for pcm in _audio_generator(stop_event):
@@ -359,14 +365,22 @@ def stt_cloud_thread(stop_event: threading.Event):
                     text = result.alternatives[0].transcript.strip()
                     if not text:
                         continue
+                    now = time.time()
+                    if last_speech_ts > 0 and (now - last_speech_ts) >= SILENCE_RESET_SEC:
+                        transcript = ''
+                        with _lock:
+                            _state['speech_event_id'] += 1
+                            _state['transcript']       = ''
                     if result.is_final:
                         transcript = (transcript + ' ' + text).strip()
                         if len(transcript) > 200:
                             transcript = transcript[-200:]
-                        _update(transcript=transcript, transcript_ts=time.time())
+                        last_speech_ts = now
+                        _update(transcript=transcript, transcript_ts=now)
                     else:
+                        last_speech_ts = now
                         _update(transcript=(transcript + ' ' + text).strip(),
-                                transcript_ts=time.time())
+                                transcript_ts=now)
         except Exception as e:
             if not stop_event.is_set() and not _stt_lang_changed.is_set():
                 print(f'[STT-Cloud] Restarting after error: {e}')
@@ -394,18 +408,32 @@ def stt_free_thread(stop_event: threading.Event):
                 return ' '.join(ow + nw[i:])
         return (old + ' ' + new).strip()
 
-    transcript = ''
+    SILENCE_RESET_SEC = 7.0
+
+    transcript     = ''
+    last_speech_ts = 0.0
+
     while not stop_event.is_set():
         if _stt_lang_changed.is_set():
             _stt_lang_changed.clear()
             buf = np.zeros(0, dtype=np.float32)
-            transcript = ''
+            transcript     = ''
+            last_speech_ts = 0.0
             print(f'[STT-Free] Language switched to {_stt_lang}')
 
         try:
             blk = _stt_q.get(timeout=0.5)
         except queue.Empty:
             continue
+
+        # Detect 7 s silence window and reset before accumulating new audio.
+        now = time.time()
+        if last_speech_ts > 0 and (now - last_speech_ts) >= SILENCE_RESET_SEC:
+            transcript     = ''
+            last_speech_ts = 0.0
+            with _lock:
+                _state['speech_event_id'] += 1
+                _state['transcript']       = ''
 
         buf = np.append(buf, blk[:, STT_CH].astype(np.float32) / 32768.0)
 
@@ -425,7 +453,8 @@ def stt_free_thread(stop_event: threading.Event):
                 transcript = _merge(transcript, text)
                 if len(transcript) > 200:
                     transcript = transcript[-200:]
-                _update(transcript=transcript, transcript_ts=time.time())
+                last_speech_ts = time.time()
+                _update(transcript=transcript, transcript_ts=last_speech_ts)
         except sr.UnknownValueError:
             pass
         except Exception as e:
