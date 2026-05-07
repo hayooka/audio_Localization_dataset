@@ -31,8 +31,8 @@ from torch.utils.data import DataLoader, Dataset
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FEATURES_DIR = os.path.join(REPO_ROOT, "0_Dataset", "features")
-RESULTS_DIR = os.path.join(REPO_ROOT, "4_results", "plots", "GRU")
-MODELS_DIR  = os.path.join(REPO_ROOT, "4_results", "models", "GRU")
+RESULTS_DIR = os.path.join(REPO_ROOT, "4_Results", "plots", "GRU")
+MODELS_DIR  = os.path.join(REPO_ROOT, "4_Results", "models", "GRU")
 
 CHUNK_TAG = "16"
 ANGLES = list(range(0, 360, 15))

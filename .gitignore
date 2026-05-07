@@ -4,6 +4,8 @@ Dataset1/
 
 # IDE
 .vscode/
+.idea/
+*.code-workspace
 
 # Python
 __pycache__/
@@ -19,6 +21,8 @@ __pycache__/
 
 # Pip package build artifacts
 *.egg-info/
+dist/
+build/
 
 # OS
 .DS_Store

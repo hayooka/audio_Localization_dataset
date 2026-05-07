@@ -1,3 +1,5 @@
+# Deployment copy of 5_inference/_features.py — kept here so the UI folder is self-contained.
+# Update 5_inference/_features.py first, then copy here to keep both in sync.
 import numpy as np
 import wave
 from scipy.signal import hilbert

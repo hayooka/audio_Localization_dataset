@@ -1,0 +1,28 @@
+# Core ML / training
+torch>=2.0
+numpy>=1.24
+pandas>=1.5
+scikit-learn>=1.2
+scipy>=1.10
+matplotlib>=3.7
+
+# Real-time audio
+pyaudio>=0.2.13
+sounddevice>=0.4.6
+
+# Sound recognition
+tensorflow>=2.12
+tensorflow-hub>=0.13
+
+# Speech-to-text (cloud)
+google-cloud-speech>=2.21
+
+# Web server
+fastapi>=0.100
+uvicorn[standard]>=0.22
+
+# Notebooks
+jupyter>=1.0
+ipykernel>=6.0
+
+# Tested with Python 3.10 on Ubuntu 22.04 (Raspberry Pi OS 64-bit) and Windows 11

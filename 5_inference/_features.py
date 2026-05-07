@@ -1,3 +1,5 @@
+# Canonical source of feature extraction logic.
+# 6_user_interface/_features.py is a deployment copy — keep both in sync when modifying.
 import numpy as np
 import wave
 from scipy.signal import hilbert

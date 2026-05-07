@@ -41,7 +41,8 @@ Usage:
 import os, sys, argparse, threading, queue, time
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 os.environ['CUDA_VISIBLE_DEVICES']  = '-1'   # CPU only (RPi / no GPU needed)
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/home/karim/google_credentials.json'
+# Set via environment variable: export GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
+# or pass --credentials /path/to/credentials.json at startup (see argparse below)
 
 import numpy as np
 import pyaudio
@@ -511,7 +512,12 @@ def main():
     parser.add_argument('--ssl-cert',default=None, help='Path to SSL cert file (enables HTTPS)')
     parser.add_argument('--stt',     default='cloud', choices=['cloud', 'free'],
                         help='"cloud" = paid Google Cloud STT (default), "free" = free web STT for testing')
+    parser.add_argument('--credentials', default=None,
+                        help='Path to Google Cloud credentials JSON (overrides GOOGLE_APPLICATION_CREDENTIALS env var)')
     args = parser.parse_args()
+
+    if args.credentials:
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = args.credentials
 
     if args.device is None:
         p = pyaudio.PyAudio()

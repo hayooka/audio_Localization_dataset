@@ -27,7 +27,7 @@ audio_Localization_dataset/
 │
 ├── 1_data_collection/
 │   ├── record_4mic_ReSpeaker.py   ← Record from ReSpeaker on a PC/laptop
-│   └── Raspberry_recor_Respeaker.py ← Record from ReSpeaker on a Raspberry Pi
+│   └── Raspberry_record_ReSpeaker.py ← Record from ReSpeaker on a Raspberry Pi
 │
 ├── 2_data_to_features/
 │   └── features_to_csv.py         ← Convert WAV recordings → 895-dim feature CSVs
@@ -37,7 +37,7 @@ audio_Localization_dataset/
 │   ├── train_ALL_features_m2.py   ← CNN training, 16 ms, seq=1 (Table II baseline)
 │   └── sequence_audio_train.py    ← GRU training, 16 ms, seq=32 (best model)
 │
-├── 4_results/                     ← Auto-created when training runs
+├── 4_Results/                     ← Auto-created when training runs
 │   ├── models/                    ← Saved .pt model checkpoints
 │   └── plots/                     ← All output figures
 │
@@ -59,14 +59,13 @@ audio_Localization_dataset/
 
 ## Requirements
 
-Install all dependencies in one command:
+Install all dependencies:
 
 ```bash
-pip install torch numpy pandas scikit-learn scipy matplotlib jupyter \
-            fastapi uvicorn pyaudio tensorflow-hub google-cloud-speech
+pip install -r requirements.txt
 ```
 
-> Tested with Python 3.10, PyTorch 2.x. GPU is optional — training works on CPU.
+> Tested with Python 3.10, PyTorch 2.x, Ubuntu 22.04 / Raspberry Pi OS 64-bit. GPU is optional — training works on CPU.
 
 ---
 
@@ -87,7 +86,7 @@ python 1_data_collection/record_4mic_ReSpeaker.py
 
 **On a Raspberry Pi:**
 ```bash
-python 1_data_collection/Raspberry_recor_Respeaker.py
+python 1_data_collection/Raspberry_record_ReSpeaker.py
 ```
 
 Save recordings in this folder structure:
@@ -141,7 +140,7 @@ python 3_training/sequence_audio_train.py \
     --epochs 50
 ```
 
-Saved to: `4_results/models/GRU/audioLOC_sequence_<run_id>.pt`
+Saved to: `4_Results/models/GRU/audioLOC_sequence_<run_id>.pt`
 
 #### Option B: CNN — Feature comparison experiment (Table I in paper)
 
@@ -181,11 +180,15 @@ The full system (localization + sound recognition + STT) runs as a web server on
 
 **1. Copy your trained GRU model to the UI folder:**
 ```bash
-cp 4_results/models/GRU/audioLOC_sequence_<run_id>.pt 6_user_interface/audioLOC_GRU.pt
+cp 4_Results/models/GRU/audioLOC_sequence_<run_id>.pt 6_user_interface/audioLOC_GRU.pt
 ```
 
-**2. Set your Google Cloud credentials** (needed for STT):  
-Edit line 41 of `6_user_interface/soundsense_server.py` with the path to your credentials JSON file.
+**2. Set your Google Cloud credentials** (needed for STT):
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/credentials.json
+# or pass at startup: python soundsense_server.py --credentials /path/to/credentials.json
+```
 
 **3. Start the server:**
 ```bash

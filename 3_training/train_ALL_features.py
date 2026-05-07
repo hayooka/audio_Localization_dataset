@@ -38,8 +38,8 @@ class EarlyStopping:
 # ── Config ────────────────────────────────────────────────────────────────────
 REPO_ROOT    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FEATURES_DIR = os.path.join(REPO_ROOT, '0_Dataset', 'features')
-PLOTS_DIR    = os.path.join(REPO_ROOT, '4_results', 'plots', 'CNN')
-MODELS_DIR   = os.path.join(REPO_ROOT, '4_results', 'models', 'CNN')
+PLOTS_DIR    = os.path.join(REPO_ROOT, '4_Results', 'plots', 'CNN')
+MODELS_DIR   = os.path.join(REPO_ROOT, '4_Results', 'models', 'CNN')
 os.makedirs(PLOTS_DIR,  exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
