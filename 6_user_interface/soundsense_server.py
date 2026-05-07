@@ -351,7 +351,7 @@ def stt_cloud_thread(stop_event: threading.Event):
             config=config, interim_results=True,
         )
         print(f'[STT-Cloud] Streaming — language={lang}')
-        SILENCE_RESET_SEC = 7.0
+        SILENCE_RESET_SEC = 3.0
         transcript     = ''
         last_speech_ts = 0.0
         try:
@@ -412,7 +412,7 @@ def stt_free_thread(stop_event: threading.Event):
                 return ' '.join(ow + nw[i:])
         return (old + ' ' + new).strip()
 
-    SILENCE_RESET_SEC = 7.0
+    SILENCE_RESET_SEC = 3.0
 
     transcript     = ''
     last_speech_ts = 0.0

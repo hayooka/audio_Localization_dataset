@@ -26,7 +26,7 @@ KEY CHANGES vs v1
 2.  STT auto-clear timestamp
     • Backend now includes `transcript_ts` (Unix timestamp) in every
       WebSocket push so the frontend can detect silence gaps.
-    • Frontend clears the transcript after 7 s of no new speech.
+    • Frontend clears the transcript after 3 s of no new speech.
 
 3.  All other threads (capture, GRU, STT) are unchanged.
 
