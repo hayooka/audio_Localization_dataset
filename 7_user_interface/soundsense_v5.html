@@ -461,11 +461,10 @@ async function fireNotification(title, body, tag){
 // ═══════════════════════════════════════════════════════════════════
 // STT STATE
 // ═══════════════════════════════════════════════════════════════════
-const STT_CLEAR_AFTER_MS   = 7000;
-const MANUAL_SUPPRESS_MS   = 1500;
-let lastTranscriptTs   = 0;
-let lastEventId        = 0;
-let clearSuppressUntil = 0;
+const STT_CLEAR_AFTER_MS      = 7000;
+let lastTranscriptTs      = 0;
+let lastEventId           = 0;
+let suppressUntilEventId  = -1;
 let sttTimerInterval   = null;
 let currentTranscript  = '';
 
@@ -538,8 +537,8 @@ function pushHistory(line) {
 
 function manualClear() {
   if (currentTranscript) pushHistory(currentTranscript);
-  currentTranscript  = '';
-  clearSuppressUntil = Date.now() + MANUAL_SUPPRESS_MS;
+  currentTranscript    = '';
+  suppressUntilEventId = lastEventId;
   stopClearTimer();
   setCaption('', false);
 }
@@ -640,10 +639,8 @@ function renderLive(data) {
 
     lastTranscriptTs = newTs;
 
-    if (Date.now() < clearSuppressUntil) {
-      if (!isNewEvent) return;
-      clearSuppressUntil = 0;
-    }
+    if (evId <= suppressUntilEventId) return;
+    suppressUntilEventId = -1;
 
     if (isNewEvent) {
       if (currentTranscript) pushHistory(currentTranscript);
