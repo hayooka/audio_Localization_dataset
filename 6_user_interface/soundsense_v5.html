@@ -469,13 +469,17 @@ async function requestNotifPermission(){
   } catch(e){ console.warn('Notification permission error:', e); }
 }
 
-function fireNotification(title, body, tag){
+async function fireNotification(title, body, tag){
   if(!notificationsEnabled) return;
   if(notifPermission !== 'granted') return;
   try {
-    if(navigator.serviceWorker && navigator.serviceWorker.controller){
-      navigator.serviceWorker.controller.postMessage({
-        type:'SHOW_NOTIF', title, body, tag
+    if('serviceWorker' in navigator){
+      const reg = await navigator.serviceWorker.ready;
+      reg.showNotification(title, {
+        body, tag,
+        icon: '/icon-192.png',
+        renotify: true,
+        requireInteraction: false,
       });
     } else {
       const n = new Notification(title, {
@@ -496,6 +500,7 @@ const STT_CLEAR_AFTER_MS = 7000;
 let lastTranscriptTs   = 0;
 let lastEventId        = 0;
 let manuallyCleared    = false;
+let clearedTranscript  = '';
 let sttTimerInterval   = null;
 let currentTranscript  = '';
 
@@ -577,9 +582,9 @@ function pushHistory(line) {
 
 function manualClear() {
   if (currentTranscript) pushHistory(currentTranscript);
+  clearedTranscript = currentTranscript;
   currentTranscript = '';
   manuallyCleared   = true;
-  lastEventId       = 0;
   stopClearTimer();
   setCaption('', false);
 }
@@ -679,9 +684,12 @@ function renderLive(data) {
 
     lastTranscriptTs = newTs;
 
-    // If the user manually cleared, suppress updates until a genuinely new event.
-    if (manuallyCleared && !isNewEvent) return;
-    manuallyCleared = false;
+    // Suppress only the exact transcript that was cleared; allow new speech through.
+    if (manuallyCleared) {
+      if (newTx === clearedTranscript && !isNewEvent) return;
+      manuallyCleared   = false;
+      clearedTranscript = '';
+    }
 
     if (isNewEvent) {
       if (currentTranscript) pushHistory(currentTranscript);
