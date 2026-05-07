@@ -535,6 +535,7 @@ function manualClear() {
   if (currentTranscript) pushHistory(currentTranscript);
   currentTranscript = '';
   manuallyCleared   = true;
+  lastEventId       = 0;
   stopClearTimer();
   setCaption('', false);
 }
@@ -642,7 +643,6 @@ function renderLive(data) {
       lastEventId = evId;
       stopClearTimer();
       triggerHaptic();
-      fireNotification('🎤 Speech detected', newTx.substring(0, 80), 'soundsense-speech');
     }
 
     currentTranscript = newTx;

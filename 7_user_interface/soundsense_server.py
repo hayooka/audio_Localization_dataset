@@ -92,6 +92,8 @@ ALERT_KEYWORDS = {
     'siren', 'alarm', 'smoke detector', 'fire alarm', 'buzzer',
     'emergency vehicle', 'ambulance', 'fire engine', 'police car',
     'reversing beeps', 'civil defense',
+    'baby cry', 'infant cry', 'crying', 'wail',
+    'dog', 'bark', 'howl', 'bow-wow',
 }
 
 def _is_alert(label: str) -> bool:
