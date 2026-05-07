@@ -5,11 +5,8 @@ Architecture:
   [capture thread] — one PyAudio stream from ReSpeaker
        │
        ├──► gru_queue    ──► [GRU thread]     angle / confidence  (every 16ms)
-       ├──► yamnet_queue ──► [YAMNet thread]  sound classification, ch0 (~1 s)
-       └──► stt_queue    ──► [STT thread]     transcript, ch1
-                                                  cloud: streaming (requires credentials)
-                                                  free:  chunked 1.2s clips, 0.3s overlap
-                                              selected at startup via --stt cloud|free
+       ├──► yamnet_queue ──► [YAMNet thread]  dual-mic agreement filter (~1 s)
+       └──► stt_queue    ──► [STT thread]     transcript (1.2s chunks, 0.3s overlap)
 
 KEY CHANGES vs v1
 ─────────────────
@@ -41,9 +38,7 @@ Usage:
 import os, sys, argparse, threading, queue, time
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 os.environ['CUDA_VISIBLE_DEVICES']  = '-1'   # CPU only (RPi / no GPU needed)
-# Set via environment variable: export GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
-# or pass --credentials /path/to/credentials.json at startup (see argparse below)
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/home/karim/google_credentials.json'  # TODO: remove
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/home/karim/google_credentials.json'
 
 import numpy as np
 import pyaudio
@@ -125,16 +120,15 @@ class SequenceGRU(nn.Module):
 # ── Shared output state ─────────────────────────────────────────────────────────
 _lock  = threading.Lock()
 _state = {
-    'angle':           0,
-    'confidence':      0.0,
-    'sound_label':     'Listening…',
-    'sound_scores':    [],
-    'is_alert':        False,
-    'alert_msg':       '',
-    'alert_hint':      '',
-    'transcript':      '',
-    'transcript_ts':   0.0,
-    'speech_event_id': 0,
+    'angle':        0,
+    'confidence':   0.0,
+    'sound_label':  'Listening…',
+    'sound_scores': [],
+    'is_alert':     False,
+    'alert_msg':    '',
+    'alert_hint':   '',
+    'transcript':   '',
+    'transcript_ts': 0.0,
 }
 
 
@@ -254,10 +248,13 @@ def yamnet_thread(stop_event: threading.Event):
     print('[YAMNet] Loading from TF Hub…')
     yamnet         = hub.load('https://tfhub.dev/google/yamnet/1')
     class_map_path = yamnet.class_map_path().numpy()
-    class_names    = []
-    with open(class_map_path) as f:
-        for line in f.readlines()[1:]:
-            class_names.append(line.split(',')[2].strip())
+    import csv as _csv
+    class_names = []
+    with open(class_map_path, newline='') as f:
+        reader = _csv.reader(f)
+        next(reader)   # skip header row
+        for row in reader:
+            class_names.append(row[2].strip())
     print(f'[YAMNet] Ready — {len(class_names)} classes | ch={YAMNET_CH} (processed output)')
 
     buf = []
@@ -273,19 +270,28 @@ def yamnet_thread(stop_event: threading.Event):
         if len(buf) < YAMNET_SAMPLES:
             continue
 
-        wav      = np.array(buf[:YAMNET_SAMPLES], dtype=np.float32)
-        buf      = buf[YAMNET_SAMPLES:]
+        wav = np.array(buf[:YAMNET_SAMPLES], dtype=np.float32)
+        # Advance by half a window (50 % overlap) so no audio falls between windows.
+        buf = buf[YAMNET_SAMPLES // 2:]
 
         scores, _, _ = yamnet(wav)
-        mean         = scores.numpy().mean(axis=0)
+        mean_scores  = scores.numpy().mean(axis=0)
 
-        top_indices = np.argsort(mean)[-5:][::-1]
+        # Guard: skip this window if inference produced NaN/inf (edge-case silence audio).
+        # Without this, json.dumps emits the non-standard literal "NaN" which
+        # makes the browser JSON.parse() throw and silently drop the entire message.
+        if not np.isfinite(mean_scores).all():
+            continue
+
+        top_indices = np.argsort(mean_scores)[-5:][::-1]
         scores_out  = [
-            {'label': class_names[i], 'score': round(float(mean[i]), 3)}
+            {'label': class_names[i], 'score': round(float(mean_scores[i]), 3)}
             for i in top_indices
-            if mean[i] > 0.05
+            if mean_scores[i] > 0.05
         ]
         if not scores_out:
+            _update(sound_label=SILENCE_LABEL, sound_scores=[],
+                    is_alert=False, alert_msg='', alert_hint='')
             continue
 
         top_label  = scores_out[0]['label']
@@ -349,9 +355,7 @@ def stt_cloud_thread(stop_event: threading.Event):
             config=config, interim_results=True,
         )
         print(f'[STT-Cloud] Streaming — language={lang}')
-        SILENCE_RESET_SEC = 7.0
-        transcript     = ''
-        last_speech_ts = 0.0
+        transcript = ''
         try:
             def _make_requests():
                 for pcm in _audio_generator(stop_event):
@@ -367,22 +371,14 @@ def stt_cloud_thread(stop_event: threading.Event):
                     text = result.alternatives[0].transcript.strip()
                     if not text:
                         continue
-                    now = time.time()
-                    if last_speech_ts > 0 and (now - last_speech_ts) >= SILENCE_RESET_SEC:
-                        transcript = ''
-                        with _lock:
-                            _state['speech_event_id'] += 1
-                            _state['transcript']       = ''
                     if result.is_final:
                         transcript = (transcript + ' ' + text).strip()
                         if len(transcript) > 200:
                             transcript = transcript[-200:]
-                        last_speech_ts = now
-                        _update(transcript=transcript, transcript_ts=now)
+                        _update(transcript=transcript, transcript_ts=time.time())
                     else:
-                        last_speech_ts = now
                         _update(transcript=(transcript + ' ' + text).strip(),
-                                transcript_ts=now)
+                                transcript_ts=time.time())
         except Exception as e:
             if not stop_event.is_set() and not _stt_lang_changed.is_set():
                 print(f'[STT-Cloud] Restarting after error: {e}')
@@ -410,32 +406,18 @@ def stt_free_thread(stop_event: threading.Event):
                 return ' '.join(ow + nw[i:])
         return (old + ' ' + new).strip()
 
-    SILENCE_RESET_SEC = 7.0
-
-    transcript     = ''
-    last_speech_ts = 0.0
-
+    transcript = ''
     while not stop_event.is_set():
         if _stt_lang_changed.is_set():
             _stt_lang_changed.clear()
             buf = np.zeros(0, dtype=np.float32)
-            transcript     = ''
-            last_speech_ts = 0.0
+            transcript = ''
             print(f'[STT-Free] Language switched to {_stt_lang}')
 
         try:
             blk = _stt_q.get(timeout=0.5)
         except queue.Empty:
             continue
-
-        # Detect 7 s silence window and reset before accumulating new audio.
-        now = time.time()
-        if last_speech_ts > 0 and (now - last_speech_ts) >= SILENCE_RESET_SEC:
-            transcript     = ''
-            last_speech_ts = 0.0
-            with _lock:
-                _state['speech_event_id'] += 1
-                _state['transcript']       = ''
 
         buf = np.append(buf, blk[:, STT_CH].astype(np.float32) / 32768.0)
 
@@ -455,8 +437,7 @@ def stt_free_thread(stop_event: threading.Event):
                 transcript = _merge(transcript, text)
                 if len(transcript) > 200:
                     transcript = transcript[-200:]
-                last_speech_ts = time.time()
-                _update(transcript=transcript, transcript_ts=last_speech_ts)
+                _update(transcript=transcript, transcript_ts=time.time())
         except sr.UnknownValueError:
             pass
         except Exception as e:
@@ -482,7 +463,12 @@ async def ws_endpoint(ws: WebSocket):
         async def _sender():
             while True:
                 await asyncio.sleep(0.1)
-                await ws.send_text(json.dumps(_snapshot()))
+                try:
+                    payload = json.dumps(_snapshot())
+                except (ValueError, TypeError) as e:
+                    print(f'[WS] json.dumps error (skipping frame): {e}')
+                    continue
+                await ws.send_text(payload)
 
         sender = asyncio.ensure_future(_sender())
         try:
@@ -513,12 +499,7 @@ def main():
     parser.add_argument('--ssl-cert',default=None, help='Path to SSL cert file (enables HTTPS)')
     parser.add_argument('--stt',     default='cloud', choices=['cloud', 'free'],
                         help='"cloud" = paid Google Cloud STT (default), "free" = free web STT for testing')
-    parser.add_argument('--credentials', default=None,
-                        help='Path to Google Cloud credentials JSON (overrides GOOGLE_APPLICATION_CREDENTIALS env var)')
     args = parser.parse_args()
-
-    if args.credentials:
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = args.credentials
 
     if args.device is None:
         p = pyaudio.PyAudio()
