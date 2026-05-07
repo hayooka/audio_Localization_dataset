@@ -683,7 +683,10 @@ function renderLive(data) {
 
     lastTranscriptTs = newTs;
 
-    if (Date.now() < clearSuppressUntil) return;
+    if (Date.now() < clearSuppressUntil) {
+      if (!isNewEvent) return;
+      clearSuppressUntil = 0;
+    }
 
     if (isNewEvent) {
       if (currentTranscript) pushHistory(currentTranscript);
