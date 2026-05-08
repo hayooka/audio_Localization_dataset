@@ -8,7 +8,7 @@ The system combines three modules:
 - **Speech-to-Text** — Google Cloud STT with Arabic (Kuwaiti dialect) and English support
 
 > **Paper:** *A Non-Prosthetic Assistive System for Persons with Hearing Losses: Design and Experimental Investigation*  
-> F. AlHayek, R. Alsubaiei, M. Alsahhaf, G. Alajmi, A. Almutairi, K. Youssef, S. Said, S. Alkork — American University of the Middle East
+> F. AlHayek, R. Alsubaiei, M. Alsahhaf, G. Alajmi, A. Almutairi, K. Youssef — American University of the Middle East
 
 ---
 
