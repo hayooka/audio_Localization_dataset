@@ -9,7 +9,7 @@ The system combines three modules:
 
 > **Paper:** *A Non-Prosthetic Assistive System for Persons with Hearing Losses: Design and Experimental Investigation*  
 > F. AlHayek, R. Alsubaiei, M. Alsahhaf, G. Alajmi, A. Almutairi, K. Youssef — American University of the Middle East  
-> 📄 [IEEE Xplore](http://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=11598267)
+> 📄 [IEEE Xplore](https://ieeexplore.ieee.org/document/11598267)
 
 > **Survey:** *Non-Prosthetic Assistive Technologies for Persons with Hearing Losses: A Survey*  
 > R. Alsubaiei, F. AlHayek, M. Alsahhaf, G. Alajmi, A. Almutairi, K. Youssef, et al.  
