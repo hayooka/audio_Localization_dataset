@@ -8,7 +8,12 @@ The system combines three modules:
 - **Speech-to-Text** — Google Cloud STT with Arabic (Kuwaiti dialect) and English support
 
 > **Paper:** *A Non-Prosthetic Assistive System for Persons with Hearing Losses: Design and Experimental Investigation*  
-> F. AlHayek, R. Alsubaiei, M. Alsahhaf, G. Alajmi, A. Almutairi, K. Youssef — American University of the Middle East
+> F. AlHayek, R. Alsubaiei, M. Alsahhaf, G. Alajmi, A. Almutairi, K. Youssef — American University of the Middle East  
+> 📄 [IEEE Xplore](http://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=11598267)
+
+> **Survey:** *Non-Prosthetic Assistive Technologies for Persons with Hearing Losses: A Survey*  
+> R. Alsubaiei, F. AlHayek, M. Alsahhaf, G. Alajmi, A. Almutairi, K. Youssef, et al.  
+> 📄 [Semantic Scholar](https://www.semanticscholar.org/paper/Non-Prosthetic-Assistive-Technologies-for-Persons-A-Alsubaiei-AlHayek/17489c5c19dc971b10849c090b18a24d69f1eda3) · [PDF](https://pdfs.semanticscholar.org/a7ff/64f6d0f9aae7063fe413f9296f614f125d1f.pdf)
 
 ---
 
@@ -265,9 +270,9 @@ The interface shows:
 |---|---|
 | Farah AlHayek | Sound Source Localization |
 | Reemas Alsubaiei | Sound Source Localization |
-| Malak Alsahhaf | Sound Recognition |
-| Ghina Alajmi | Speech-to-Text |
-| Arwa Almutairi | Hardware & Integration |
-| Dr. Khaled Youssef | Supervisor |
-| Dr. Samer Said | Supervisor |
+| Mariam Alsahhaf | Sound Recognition |
+| Ghada Alajmi | Speech-to-Text |
+| Alia Almutairi | Speech-to-Text |
+| Dr. Kareem Youssef | Supervisor |
+| Dr. Sheref Said | Supervisor |
 | Dr. Samer Alkork | Supervisor |
